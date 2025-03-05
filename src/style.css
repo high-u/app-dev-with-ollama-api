@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+    themes: all;
+}
+.markdown-element ul {
+    list-style: square;
+}
+.markdown-element ol {
+    list-style: decimal;
+}
+.markdown-element ul li,
+.markdown-element ol li {
+    margin-left: 2rem;
+}
+.markdown-element ul li p {
+    display: inline;
+}
