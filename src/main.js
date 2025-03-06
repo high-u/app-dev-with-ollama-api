@@ -4,7 +4,7 @@
 
 import "./style.css";
 import van from "vanjs-core";
-import ollama from "ollama";
+import ollama from "ollama/browser";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
