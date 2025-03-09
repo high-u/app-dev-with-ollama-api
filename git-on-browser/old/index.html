@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8" />
+        <title>HTML5の雛形</title>
+        <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
+        <script src="https://unpkg.com/isomorphic-git"></script>
+    </head>
+    <body>
+        <button id="hoge">git</button>
+        <script type="module">
+            import http from "https://unpkg.com/isomorphic-git@beta/http/web/index.js";
+            const hoge = document.getElementById("hoge");
+            hoge.addEventListener("click", async () => {
+                const fs = new LightningFS("fs");
+                const dir = "/test-clone3";
+
+                // await fs.promises.du(dir);
+                await fs.promises.mkdir(dir);
+
+                await git.init({ fs, dir: dir, defaultBranch: "main" });
+                console.log("git init");
+                await git.setConfig({
+                    fs,
+                    dir: dir,
+                    path: "user.name",
+                    value: "",
+                });
+                console.log("git set config 1");
+                await git.setConfig({
+                    fs,
+                    dir: dir,
+                    path: "user.email",
+                    value: "",
+                });
+                console.log("git set config 2");
+
+                // let branch = await git.currentBranch({
+                //     fs,
+                //     dir: dir,
+                //     fullname: false,
+                // });
+                // console.log({ branch });
+
+                await fs.promises.writeFile(`${dir}/README.md`, `# TEST`);
+                await git.add({
+                    fs,
+                    dir: dir,
+                    filepath: "README.md",
+                });
+                console.log("git add .");
+                let sha = await git.commit({
+                    fs,
+                    dir: dir,
+                    ref: "main",
+                    author: {
+                        name: "",
+                        email: "",
+                    },
+                    message: "Added the a.txt file",
+                });
+                console.log('git commit -m "Added the a.txt file"');
+                console.log(sha);
+
+                await git.branch({
+                    fs,
+                    dir: dir,
+                    ref: "main",
+                    checkout: true,
+                    force: true,
+                });
+                console.log("git branch");
+
+                const url = "https://github.com/high-u/my-new-repository-7.git";
+                await git.addRemote({
+                    fs,
+                    dir: dir,
+                    remote: "origin",
+                    url: url,
+                });
+                console.log(`git remote add origin ${url}`);
+                let pushResult = await git.push({
+                    fs,
+                    http,
+                    dir: dir,
+                    remote: "origin",
+                    ref: "main",
+                    onAuth: () => ({
+                        username: "",
+                        password: "",
+                    }),
+                    force: true,
+                });
+                console.log(pushResult);
+            });
+        </script>
+    </body>
+</html>

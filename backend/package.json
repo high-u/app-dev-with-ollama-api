@@ -1,0 +1,20 @@
+{
+  "name": "git-on-browser",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node --env-file=.env app.js",
+    "dev2": "node --env-file=.env app2.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^4.21.2",
+    "isomorphic-git": "^1.29.0",
+    "memfs": "^4.17.0"
+  }
+}
