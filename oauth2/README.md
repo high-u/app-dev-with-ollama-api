@@ -8,7 +8,7 @@
     `script` タグは、 `type="module"` として、import できるように実装してください。
 - `oidc-client-ts`の最新バージョンは `3.1.0` だけど、生成されたソースコードでは、 `2.2.1` 。ま、これは仕方ない。どこかでバージョンアップする。
 - Google Cloud
-    - https://console.cloud.google.com/auth/clients?authuser=1&hl=ja&inv=1&invt=AbrjCQ&project=devui-453206&supportedpurview=project
+    - https://console.cloud.google.com/auth/clients
     - 『承認済みの JavaScript 生成元』と『承認済みのリダイレクト URI』に、下記で発行されたドメインを割り当てる。
         - 例
             - 承認済みの JavaScript 生成元
