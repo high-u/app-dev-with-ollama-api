@@ -20,6 +20,7 @@
     "marked-highlight": "^2.2.1",
     "ollama": "^0.5.14",
     "tailwindcss": "^4.0.9",
-    "vanjs-core": "^1.5.3"
+    "vanjs-core": "^1.5.3",
+    "vanjs-ui": "^0.11.10"
   }
 }

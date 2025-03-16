@@ -4,6 +4,7 @@ import path from "path";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/node/index.js";
 import { fs, vol } from "memfs";
+import cors from "cors"; // corsモジュールをインポート
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,6 +14,10 @@ const GITHUB_USERNAME = process.env.GITHUB_USERNAME;
 const GITHUB_PAT = process.env.GITHUB_PAT;
 const GIT_AUTHOR_NAME = process.env.GIT_AUTHOR_NAME;
 const GIT_AUTHOR_EMAIL = process.env.GIT_AUTHOR_EMAIL;
+// 許可されたオリジンを環境変数から取得
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",")
+  : [];
 
 // 認証情報の検証
 if (!GITHUB_USERNAME || !GITHUB_PAT) {
@@ -22,7 +27,32 @@ if (!GITHUB_USERNAME || !GITHUB_PAT) {
   process.exit(1);
 }
 
+// CORSミドルウェアの設定
+const corsOptions = {
+  origin: function (origin, callback) {
+    // オリジンがリストにあるか、開発環境で未定義の場合は許可
+    if (
+      ALLOWED_ORIGINS.length === 0 ||
+      ALLOWED_ORIGINS.indexOf(origin) !== -1 ||
+      !origin
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+};
+
 // ミドルウェアの設定
+app.use(cors(corsOptions)); // CORSミドルウェアを適用
+
+// OPTIONSリクエストに明示的に対応
+app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.static("public"));
 
@@ -221,4 +251,7 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`GitHub Username: ${GITHUB_USERNAME}`);
   console.log(`Git author: ${GIT_AUTHOR_NAME} <${GIT_AUTHOR_EMAIL}>`);
+  console.log(
+    `Allowed origins: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(", ") : "All (no restrictions)"}`,
+  );
 });
