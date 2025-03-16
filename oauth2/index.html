@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Google OAuth2 with oidc-client-ts</title>
+        <title>Google OAuth2 with PKCE</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -40,24 +40,79 @@
                 border: 1px solid #ddd;
                 border-radius: 4px;
             }
+            .loader {
+                margin: 30px auto;
+                border: 5px solid #f3f3f3;
+                border-radius: 50%;
+                border-top: 5px solid #3498db;
+                width: 50px;
+                height: 50px;
+                animation: spin 2s linear infinite;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+            .message {
+                margin: 20px 0;
+                padding: 10px;
+                border-radius: 4px;
+                text-align: center;
+            }
+            .success {
+                background-color: #d4edda;
+                color: #155724;
+            }
+            .error {
+                background-color: #f8d7da;
+                color: #721c24;
+            }
+            #redirect-view {
+                text-align: center;
+            }
         </style>
     </head>
     <body>
-        <h1>Google OAuth2 クライアント</h1>
+        <!-- メイン画面のビュー -->
+        <div id="main-view">
+            <h1>Google OAuth2 クライアント (PKCE)</h1>
 
-        <div id="login-section">
-            <button id="login-button">Googleでログイン</button>
+            <div id="login-section">
+                <button id="login-button">Googleでログイン</button>
+            </div>
+
+            <div id="user-section" class="hidden">
+                <h2>ログイン成功</h2>
+                <div class="user-info">
+                    <h3>ユーザー情報</h3>
+                    <div id="user-profile"></div>
+                </div>
+                <button id="get-user-info">ユーザー情報を取得</button>
+                <button id="refresh-token">トークンを更新</button>
+                <button id="logout-button">ログアウト</button>
+            </div>
         </div>
 
-        <div id="user-section" class="hidden">
-            <h2>ログイン成功</h2>
-            <div class="user-info">
-                <h3>ユーザー情報</h3>
-                <div id="user-profile"></div>
+        <!-- リダイレクト画面のビュー -->
+        <div id="redirect-view" class="hidden">
+            <h1>Google OAuth2 認証処理中</h1>
+
+            <div id="loading-section">
+                <div class="loader"></div>
+                <p>認証情報を処理しています。しばらくお待ちください...</p>
             </div>
-            <button id="get-user-info">ユーザー情報を取得</button>
-            <button id="refresh-token">トークンを更新</button>
-            <button id="logout-button">ログアウト</button>
+
+            <div id="message-section" style="display: none"></div>
+
+            <div>
+                <button id="return-button" style="display: none">
+                    メイン画面に戻る
+                </button>
+            </div>
         </div>
 
         <div>
@@ -65,158 +120,78 @@
             <pre id="log"></pre>
         </div>
 
-        <script type="module">
-            // oidc-client-tsからUserManagerをインポート
-            import {
-                UserManager,
-                WebStorageStateStore,
-            } from "https://cdn.jsdelivr.net/npm/oidc-client-ts@2.2.1/+esm";
-
-            // ログ出力用の関数
-            function log(message) {
-                const logElement = document.getElementById("log");
-                logElement.textContent += message + "\n";
-                console.log(message);
-            }
-
-            // OIDC設定
-            // 注意: 実際に使用する場合は、client_idを自分のGoogle API Consoleで取得したものに置き換えてください
-            console.log(window.location.origin);
-            const oidcConfig = {
-                authority: "https://accounts.google.com",
+        <script>
+            // OAuth設定
+            const config = {
                 client_id:
-                    "999999999999-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com", // ここを自分のクライアントIDに置き換えてください
-                client_secret: "XXXXXXXXXXXXXXXXXXXXXXX--XXXXXXXXXX",
-                redirect_uri: window.location.origin + "/redirect/", // リダイレクト先をredirect.htmlに変更
-                response_type: "code",
+                    "999999999999-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com", // ここを自分のクライアントIDに置き換え
+                client_secret: "XXXXXXXXXXXXXXXXXXXXXXX--XXXXXXXXXX", // ここを自分のクライアントシークレットに置き換え
+                redirect_uri: window.location.origin + "/redirect/",
+                auth_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+                token_endpoint: "https://oauth2.googleapis.com/token",
                 scope: "openid profile email",
-                loadUserInfo: true,
-                automaticSilentRenew: true,
-                userStore: new WebStorageStateStore({
-                    store: window.localStorage,
-                }),
+                userinfo_endpoint:
+                    "https://openidconnect.googleapis.com/v1/userinfo",
+                revocation_endpoint: "https://oauth2.googleapis.com/revoke",
             };
 
-            // UserManagerのインスタンスを作成
-            const userManager = new UserManager(oidcConfig);
+            // ローカルストレージのキー
+            const STORAGE_KEYS = {
+                CODE_VERIFIER: "oauth_code_verifier",
+                STATE: "oauth_state",
+                ACCESS_TOKEN: "oauth_access_token",
+                ID_TOKEN: "oauth_id_token",
+                REFRESH_TOKEN: "oauth_refresh_token",
+                TOKEN_EXPIRY: "oauth_token_expiry",
+                USER_PROFILE: "oauth_user_profile",
+            };
 
-            // エラーイベントのハンドリング
-            userManager.events.addUserLoaded((user) => {
-                log("ユーザーがロードされました");
-                showUserInfo(user);
-            });
+            // ログ出力関数
+            function log(message) {
+                const logElement = document.getElementById("log");
+                const timestamp = new Date().toLocaleTimeString();
+                logElement.textContent += `[${timestamp}] ${message}\n`;
+                console.log(message);
 
-            userManager.events.addSilentRenewError((error) => {
-                log("サイレント更新エラー: " + error);
-            });
-
-            userManager.events.addUserSignedOut(() => {
-                log("ユーザーがサインアウトしました");
-                updateUI(false);
-            });
-
-            // ページ読み込み時の処理
-            document.addEventListener("DOMContentLoaded", async () => {
-                // 既存のユーザーセッションをチェック
-                try {
-                    const user = await userManager.getUser();
-                    if (user && !user.expired) {
-                        log("既存のセッションを発見");
-                        showUserInfo(user);
-                    }
-                } catch (error) {
-                    log("ユーザー取得エラー: " + error);
-                }
-
-                // ログインボタンのイベントハンドラ
-                document
-                    .getElementById("login-button")
-                    .addEventListener("click", () => {
-                        userManager.signinRedirect().catch((error) => {
-                            log("ログインリダイレクトエラー: " + error);
-                        });
-                    });
-
-                // ログアウトボタンのイベントハンドラ
-                document
-                    .getElementById("logout-button")
-                    .addEventListener("click", () => {
-                        userManager.signoutRedirect().catch((error) => {
-                            log("ログアウトエラー: " + error);
-                            // ローカルでのログアウト処理
-                            userManager.removeUser().then(() => {
-                                updateUI(false);
-                            });
-                        });
-                    });
-
-                // ユーザー情報取得ボタンのイベントハンドラ
-                document
-                    .getElementById("get-user-info")
-                    .addEventListener("click", async () => {
-                        try {
-                            const user = await userManager.getUser();
-                            if (user) {
-                                log("ユーザー情報を取得しました");
-                                showUserInfo(user);
-                            } else {
-                                log("ユーザーがログインしていません");
-                            }
-                        } catch (error) {
-                            log("ユーザー情報取得エラー: " + error);
-                        }
-                    });
-
-                // トークン更新ボタンのイベントハンドラ
-                document
-                    .getElementById("refresh-token")
-                    .addEventListener("click", async () => {
-                        try {
-                            const user = await userManager.getUser();
-                            if (user) {
-                                const renewedUser =
-                                    await userManager.signinSilent();
-                                log("トークンを更新しました");
-                                showUserInfo(renewedUser);
-                            } else {
-                                log("更新するユーザーセッションがありません");
-                            }
-                        } catch (error) {
-                            log("トークン更新エラー: " + error);
-                        }
-                    });
-            });
-
-            // ユーザー情報を表示する関数
-            function showUserInfo(user) {
-                if (user) {
-                    updateUI(true);
-
-                    const profile = document.getElementById("user-profile");
-                    profile.innerHTML = "";
-
-                    // ユーザープロファイル情報の表示
-                    const profileInfo = document.createElement("div");
-                    profileInfo.innerHTML = `
-          <p><strong>名前:</strong> ${user.profile.name || "N/A"}</p>
-          <p><strong>メール:</strong> ${user.profile.email || "N/A"}</p>
-          <p><strong>サブジェクト:</strong> ${user.profile.sub || "N/A"}</p>
-          <p><strong>アクセストークン期限:</strong> ${new Date(user.expires_at * 1000).toLocaleString()}</p>
-        `;
-                    profile.appendChild(profileInfo);
-
-                    // トークン情報の表示
-                    const tokenInfo = document.createElement("div");
-                    tokenInfo.innerHTML = `
-          <h4>トークン情報</h4>
-          <p><strong>アクセストークン:</strong> ${user.access_token.substring(0, 20)}...</p>
-          <p><strong>IDトークン:</strong> ${user.id_token.substring(0, 20)}...</p>
-        `;
-                    profile.appendChild(tokenInfo);
-                }
+                // 常に最新のログが見えるようにスクロール
+                logElement.scrollTop = logElement.scrollHeight;
             }
 
-            // UI状態の更新
+            // ビュー表示関数
+            function showView(viewName) {
+                // すべてのビューを非表示
+                document.getElementById("main-view").classList.add("hidden");
+                document
+                    .getElementById("redirect-view")
+                    .classList.add("hidden");
+
+                // 指定されたビューを表示
+                document.getElementById(viewName).classList.remove("hidden");
+            }
+
+            // URLパラメータ取得関数
+            function getUrlParameter(name) {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get(name);
+            }
+
+            // メッセージ表示関数
+            function showMessage(message, isError = false) {
+                const messageSection =
+                    document.getElementById("message-section");
+                messageSection.innerHTML = `<div class="message ${isError ? "error" : "success"}">${message}</div>`;
+                messageSection.style.display = "block";
+
+                // ローディング表示を非表示
+                document.getElementById("loading-section").style.display =
+                    "none";
+
+                // 戻るボタン表示
+                document.getElementById("return-button").style.display =
+                    "block";
+            }
+
+            // UI状態更新関数
             function updateUI(isLoggedIn) {
                 document
                     .getElementById("login-section")
@@ -225,6 +200,600 @@
                     .getElementById("user-section")
                     .classList.toggle("hidden", !isLoggedIn);
             }
+
+            // ユーザー情報表示関数
+            function showUserInfo(profile, tokens) {
+                if (profile && tokens) {
+                    updateUI(true);
+
+                    const profileElement =
+                        document.getElementById("user-profile");
+                    profileElement.innerHTML = "";
+
+                    // ユーザープロファイル情報の表示
+                    const profileInfo = document.createElement("div");
+                    profileInfo.innerHTML = `
+                        <p><strong>名前:</strong> ${profile.name || "N/A"}</p>
+                        <p><strong>メール:</strong> ${profile.email || "N/A"}</p>
+                        <p><strong>サブジェクト:</strong> ${profile.sub || "N/A"}</p>
+                        <p><strong>アクセストークン期限:</strong> ${new Date(tokens.expires_at).toLocaleString()}</p>
+                    `;
+                    profileElement.appendChild(profileInfo);
+
+                    // トークン情報の表示
+                    const tokenInfo = document.createElement("div");
+                    tokenInfo.innerHTML = `
+                        <h4>トークン情報</h4>
+                        <p><strong>アクセストークン:</strong> ${tokens.access_token.substring(0, 20)}...</p>
+                        ${tokens.id_token ? `<p><strong>IDトークン:</strong> ${tokens.id_token.substring(0, 20)}...</p>` : ""}
+                        ${tokens.refresh_token ? `<p><strong>リフレッシュトークン:</strong> ${tokens.refresh_token.substring(0, 10)}...</p>` : ""}
+                    `;
+                    profileElement.appendChild(tokenInfo);
+                }
+            }
+
+            // ランダム文字列生成関数
+            function generateRandomString(length = 43) {
+                const array = new Uint8Array(length);
+                crypto.getRandomValues(array);
+                return Array.from(array, (byte) =>
+                    ("0" + (byte & 0xff).toString(16)).slice(-2),
+                ).join("");
+            }
+
+            // SHA-256ハッシュ計算関数
+            async function sha256(plain) {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(plain);
+                return await crypto.subtle.digest("SHA-256", data);
+            }
+
+            // base64urlエンコード関数
+            function base64urlEncode(arrayBuffer) {
+                const bytes = new Uint8Array(arrayBuffer);
+                const base64 = btoa(String.fromCharCode.apply(null, bytes));
+                return base64
+                    .replace(/\+/g, "-")
+                    .replace(/\//g, "_")
+                    .replace(/=+$/, "");
+            }
+
+            // Code Verifier生成関数
+            function generateCodeVerifier() {
+                return generateRandomString(43);
+            }
+
+            // Code Challenge生成関数
+            async function generateCodeChallenge(codeVerifier) {
+                const hashBuffer = await sha256(codeVerifier);
+                return base64urlEncode(hashBuffer);
+            }
+
+            // JWTデコード関数
+            function parseJwt(token) {
+                try {
+                    const base64Url = token.split(".")[1];
+                    const base64 = base64Url
+                        .replace(/-/g, "+")
+                        .replace(/_/g, "/");
+                    const jsonPayload = decodeURIComponent(
+                        atob(base64)
+                            .split("")
+                            .map(function (c) {
+                                return (
+                                    "%" +
+                                    ("00" + c.charCodeAt(0).toString(16)).slice(
+                                        -2,
+                                    )
+                                );
+                            })
+                            .join(""),
+                    );
+                    return JSON.parse(jsonPayload);
+                } catch (error) {
+                    log("JWTデコードエラー: " + error);
+                    return {};
+                }
+            }
+
+            // トークン保存関数
+            function saveTokens(tokenData) {
+                const expiresAt = Date.now() + tokenData.expires_in * 1000;
+
+                localStorage.setItem(
+                    STORAGE_KEYS.ACCESS_TOKEN,
+                    tokenData.access_token,
+                );
+                localStorage.setItem(
+                    STORAGE_KEYS.TOKEN_EXPIRY,
+                    expiresAt.toString(),
+                );
+
+                if (tokenData.id_token) {
+                    localStorage.setItem(
+                        STORAGE_KEYS.ID_TOKEN,
+                        tokenData.id_token,
+                    );
+
+                    // IDトークンからプロファイル情報を取得して保存
+                    const profile = parseJwt(tokenData.id_token);
+                    localStorage.setItem(
+                        STORAGE_KEYS.USER_PROFILE,
+                        JSON.stringify(profile),
+                    );
+                }
+
+                if (tokenData.refresh_token) {
+                    localStorage.setItem(
+                        STORAGE_KEYS.REFRESH_TOKEN,
+                        tokenData.refresh_token,
+                    );
+                }
+
+                return {
+                    access_token: tokenData.access_token,
+                    id_token: tokenData.id_token,
+                    refresh_token: tokenData.refresh_token,
+                    expires_at: expiresAt,
+                };
+            }
+
+            // トークン取得関数
+            function getTokens() {
+                const access_token = localStorage.getItem(
+                    STORAGE_KEYS.ACCESS_TOKEN,
+                );
+                const id_token = localStorage.getItem(STORAGE_KEYS.ID_TOKEN);
+                const refresh_token = localStorage.getItem(
+                    STORAGE_KEYS.REFRESH_TOKEN,
+                );
+                const expires_at = parseInt(
+                    localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY) || "0",
+                );
+
+                if (!access_token) {
+                    return null;
+                }
+
+                return {
+                    access_token,
+                    id_token,
+                    refresh_token,
+                    expires_at,
+                };
+            }
+
+            // ユーザープロファイル取得関数
+            function getUserProfile() {
+                const profileJson = localStorage.getItem(
+                    STORAGE_KEYS.USER_PROFILE,
+                );
+                if (!profileJson) {
+                    return null;
+                }
+
+                try {
+                    return JSON.parse(profileJson);
+                } catch (error) {
+                    log("プロファイルJSONパースエラー: " + error);
+                    return null;
+                }
+            }
+
+            // トークンクリア関数
+            function clearTokens() {
+                localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+                localStorage.removeItem(STORAGE_KEYS.ID_TOKEN);
+                localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+                localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+                localStorage.removeItem(STORAGE_KEYS.USER_PROFILE);
+            }
+
+            // PKCEを使用した認証開始関数
+            async function startPkceAuth() {
+                try {
+                    log("PKCE認証を開始します");
+
+                    // Code Verifierを生成して保存
+                    const codeVerifier = generateCodeVerifier();
+                    localStorage.setItem(
+                        STORAGE_KEYS.CODE_VERIFIER,
+                        codeVerifier,
+                    );
+
+                    // State値を生成して保存
+                    const state = generateRandomString(16);
+                    localStorage.setItem(STORAGE_KEYS.STATE, state);
+
+                    // Code Challengeを生成
+                    const codeChallenge =
+                        await generateCodeChallenge(codeVerifier);
+
+                    // 認証URLを生成
+                    const authUrl = new URL(config.auth_endpoint);
+                    authUrl.searchParams.append("client_id", config.client_id);
+                    authUrl.searchParams.append(
+                        "redirect_uri",
+                        config.redirect_uri,
+                    );
+                    authUrl.searchParams.append("response_type", "code");
+                    authUrl.searchParams.append("scope", config.scope);
+                    authUrl.searchParams.append("state", state);
+                    authUrl.searchParams.append(
+                        "code_challenge",
+                        codeChallenge,
+                    );
+                    authUrl.searchParams.append(
+                        "code_challenge_method",
+                        "S256",
+                    );
+                    authUrl.searchParams.append("access_type", "offline"); // リフレッシュトークン用
+                    authUrl.searchParams.append("prompt", "consent"); // 常に同意画面表示
+
+                    log(
+                        `認証URLを生成しました: ${authUrl.toString().substring(0, 100)}...`,
+                    );
+
+                    // 認証URLにリダイレクト
+                    window.location.href = authUrl.toString();
+                } catch (error) {
+                    log("PKCE認証開始エラー: " + error);
+                }
+            }
+
+            // コードによるトークン取得関数
+            async function exchangeCodeForToken(code) {
+                try {
+                    log("認証コードを使用してトークンを取得します");
+
+                    // 保存されたCode Verifierを取得
+                    const codeVerifier = localStorage.getItem(
+                        STORAGE_KEYS.CODE_VERIFIER,
+                    );
+                    if (!codeVerifier) {
+                        throw new Error("Code Verifierが見つかりません");
+                    }
+
+                    // リクエストボディを準備
+                    const params = new URLSearchParams();
+                    params.append("client_id", config.client_id);
+                    params.append("client_secret", config.client_secret);
+                    params.append("code", code);
+                    params.append("code_verifier", codeVerifier);
+                    params.append("grant_type", "authorization_code");
+                    params.append("redirect_uri", config.redirect_uri);
+
+                    log("トークンリクエストを送信します");
+
+                    // トークンエンドポイントにリクエスト
+                    const response = await fetch(config.token_endpoint, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        body: params,
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(
+                            `トークン取得エラー: ${response.status} ${errorText}`,
+                        );
+                    }
+
+                    const tokenData = await response.json();
+                    log("トークンを取得しました");
+
+                    // トークンを保存
+                    return saveTokens(tokenData);
+                } catch (error) {
+                    log("トークン取得エラー: " + error);
+                    throw error;
+                } finally {
+                    // 使用済みのPKCEパラメータをクリア
+                    localStorage.removeItem(STORAGE_KEYS.CODE_VERIFIER);
+                    localStorage.removeItem(STORAGE_KEYS.STATE);
+                }
+            }
+
+            // リフレッシュトークンによるトークン更新関数
+            async function refreshAccessToken() {
+                try {
+                    log(
+                        "リフレッシュトークンを使用してアクセストークンを更新します",
+                    );
+
+                    const tokens = getTokens();
+                    if (!tokens || !tokens.refresh_token) {
+                        throw new Error("リフレッシュトークンが見つかりません");
+                    }
+
+                    // リクエストボディを準備
+                    const params = new URLSearchParams();
+                    params.append("client_id", config.client_id);
+                    params.append("client_secret", config.client_secret);
+                    params.append("refresh_token", tokens.refresh_token);
+                    params.append("grant_type", "refresh_token");
+
+                    // トークンエンドポイントにリクエスト
+                    const response = await fetch(config.token_endpoint, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        body: params,
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(
+                            `トークン更新エラー: ${response.status} ${errorText}`,
+                        );
+                    }
+
+                    const tokenData = await response.json();
+                    log("アクセストークンを更新しました");
+
+                    // 注：リフレッシュトークンは通常返却されないので、既存のものを保持する
+                    if (!tokenData.refresh_token && tokens.refresh_token) {
+                        tokenData.refresh_token = tokens.refresh_token;
+                    }
+
+                    // トークンを保存
+                    return saveTokens(tokenData);
+                } catch (error) {
+                    log("トークン更新エラー: " + error);
+                    throw error;
+                }
+            }
+
+            // ユーザー情報をAPIから取得
+            async function fetchUserInfo(accessToken) {
+                try {
+                    log("ユーザー情報をAPIから取得します");
+
+                    const response = await fetch(config.userinfo_endpoint, {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(
+                            `ユーザー情報取得エラー: ${response.status}`,
+                        );
+                    }
+
+                    const userData = await response.json();
+                    log("ユーザー情報を取得しました");
+
+                    // ユーザー情報を保存
+                    localStorage.setItem(
+                        STORAGE_KEYS.USER_PROFILE,
+                        JSON.stringify(userData),
+                    );
+
+                    return userData;
+                } catch (error) {
+                    log("ユーザー情報取得エラー: " + error);
+                    throw error;
+                }
+            }
+
+            // ログアウト関数
+            async function logout() {
+                try {
+                    log("ログアウトを開始します");
+
+                    const tokens = getTokens();
+                    if (tokens && tokens.access_token) {
+                        // トークン失効リクエスト
+                        const params = new URLSearchParams();
+                        params.append("token", tokens.access_token);
+
+                        try {
+                            const response = await fetch(
+                                config.revocation_endpoint,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/x-www-form-urlencoded",
+                                    },
+                                    body: params,
+                                },
+                            );
+
+                            log(`トークン失効レスポンス: ${response.status}`);
+                        } catch (error) {
+                            log("トークン失効エラー: " + error);
+                        }
+                    }
+
+                    // ローカルトークンをクリア
+                    clearTokens();
+                    updateUI(false);
+                    log("ログアウト完了");
+                } catch (error) {
+                    log("ログアウトエラー: " + error);
+                    // エラーが発生してもローカルデータはクリア
+                    clearTokens();
+                    updateUI(false);
+                }
+            }
+
+            // パスによって表示を切り替える関数
+            function handleRoute() {
+                const currentPath = window.location.pathname;
+                log("現在のパス: " + currentPath);
+
+                if (currentPath.includes("/redirect/")) {
+                    // リダイレクト処理画面を表示
+                    showView("redirect-view");
+                    handleRedirect();
+                } else {
+                    // メイン画面を表示
+                    showView("main-view");
+                    initMainView();
+                }
+            }
+
+            // リダイレクト処理
+            async function handleRedirect() {
+                const code = getUrlParameter("code");
+                const state = getUrlParameter("state");
+                const error = getUrlParameter("error");
+                const savedState = localStorage.getItem(STORAGE_KEYS.STATE);
+
+                if (error) {
+                    log("認証エラー: " + error);
+                    const errorDescription =
+                        getUrlParameter("error_description");
+                    showMessage(
+                        `認証エラー: ${error} - ${errorDescription || ""}`,
+                        true,
+                    );
+                } else if (!code) {
+                    log("認証コードが見つかりません");
+                    showMessage(
+                        "認証情報が見つかりません。初期画面に戻ってください。",
+                        true,
+                    );
+                } else if (state !== savedState) {
+                    log("State値が一致しません");
+                    showMessage(
+                        "セキュリティエラー: State値が一致しません。不正なリクエストの可能性があります。",
+                        true,
+                    );
+                } else {
+                    try {
+                        log(
+                            "認証コードを取得しました: " +
+                                code.substring(0, 10) +
+                                "...",
+                        );
+                        const tokens = await exchangeCodeForToken(code);
+                        const profile = getUserProfile();
+                        log(
+                            "認証成功: " +
+                                (profile ? profile.name : "ユーザー"),
+                        );
+                        showMessage(
+                            `${profile ? profile.name : "ユーザー"}さん、認証に成功しました。メイン画面に戻ってください。`,
+                        );
+                    } catch (error) {
+                        log("認証処理エラー: " + error);
+                        showMessage(
+                            "認証中にエラーが発生しました: " + error,
+                            true,
+                        );
+                    }
+                }
+
+                // メイン画面に戻るボタン
+                document
+                    .getElementById("return-button")
+                    .addEventListener("click", () => {
+                        window.location.href = window.location.origin;
+                    });
+            }
+
+            // メイン画面の初期化
+            async function initMainView() {
+                // 既存のセッションをチェック
+                const tokens = getTokens();
+                const profile = getUserProfile();
+
+                if (tokens && tokens.expires_at > Date.now()) {
+                    log("有効なトークンを発見");
+                    showUserInfo(profile, tokens);
+                } else if (tokens && tokens.refresh_token) {
+                    try {
+                        log("トークンの期限切れ、更新を試みます");
+                        const newTokens = await refreshAccessToken();
+                        const newProfile = getUserProfile();
+                        showUserInfo(newProfile, newTokens);
+                    } catch (error) {
+                        log("トークン更新失敗: " + error);
+                        clearTokens();
+                        updateUI(false);
+                    }
+                } else {
+                    log("有効なセッションがありません");
+                    updateUI(false);
+                }
+
+                // ボタンイベントのセットアップ
+                setupEventListeners();
+            }
+
+            // イベントリスナーのセットアップ
+            function setupEventListeners() {
+                // ログインボタン
+                document
+                    .getElementById("login-button")
+                    .addEventListener("click", () => {
+                        startPkceAuth().catch((error) => {
+                            log("ログイン開始エラー: " + error);
+                        });
+                    });
+
+                // ログアウトボタン
+                document
+                    .getElementById("logout-button")
+                    .addEventListener("click", () => {
+                        logout().catch((error) => {
+                            log("ログアウトエラー: " + error);
+                        });
+                    });
+
+                // ユーザー情報取得ボタン
+                document
+                    .getElementById("get-user-info")
+                    .addEventListener("click", async () => {
+                        try {
+                            const tokens = getTokens();
+                            if (!tokens) {
+                                log("トークンがありません");
+                                return;
+                            }
+
+                            const userInfo = await fetchUserInfo(
+                                tokens.access_token,
+                            );
+                            log("最新のユーザー情報を取得しました");
+                            showUserInfo(userInfo, tokens);
+                        } catch (error) {
+                            log("ユーザー情報取得エラー: " + error);
+                        }
+                    });
+
+                // トークン更新ボタン
+                document
+                    .getElementById("refresh-token")
+                    .addEventListener("click", async () => {
+                        try {
+                            const tokens = getTokens();
+                            if (!tokens || !tokens.refresh_token) {
+                                log("リフレッシュトークンがありません");
+                                return;
+                            }
+
+                            const newTokens = await refreshAccessToken();
+                            const profile = getUserProfile();
+                            log("トークンを更新しました");
+                            showUserInfo(profile, newTokens);
+                        } catch (error) {
+                            log("トークン更新エラー: " + error);
+                        }
+                    });
+            }
+
+            // アプリケーション初期化
+            document.addEventListener("DOMContentLoaded", () => {
+                log("アプリケーションを初期化しています");
+                handleRoute();
+            });
         </script>
     </body>
 </html>
