@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.21.2",
     "isomorphic-git": "^1.29.0",
     "memfs": "^4.17.0"

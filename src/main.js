@@ -4,6 +4,7 @@
 
 import "./style.css";
 import van from "vanjs-core";
+import { Modal } from "vanjs-ui";
 import ollama from "ollama/browser";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
@@ -13,8 +14,21 @@ import { jsonrepair } from "jsonrepair";
 import { systemPrompt } from "./const.js";
 
 (async () => {
-  const { button, div, input, sup, textarea, pre, ul, li, select, option, p } =
-    van.tags;
+  const {
+    button,
+    div,
+    input,
+    sup,
+    textarea,
+    pre,
+    ul,
+    li,
+    select,
+    option,
+    p,
+    form,
+    label,
+  } = van.tags;
 
   let chatMessages = [];
 
@@ -28,8 +42,15 @@ import { systemPrompt } from "./const.js";
     }),
   );
 
-  const addMessage = (message, role) => {
+  const deploy = (message) => {
+    console.log(message);
+  };
+
+  const addMessage = (message, role, files) => {
     // message = message.replace(/[\n]+/, "\n");
+    console.log({ message });
+    console.log({ files });
+
     const style = ((role) => {
       if (role === "user") {
         return "bg-base-300";
@@ -49,13 +70,152 @@ import { systemPrompt } from "./const.js";
 
     const html = markedWithHighlight.parse(message);
     // const htmlMinify = html.replace(/>[\n\s]+/g, ">").replace(/[\n\s]+</, "<");
-    console.log(html);
+    // console.log(html);
 
+    // const gitBranch = van.state("");
+    // const gitURL = van.state("");
+    // const gitCommitMessage = van.state("");
+    // const gitRemote = van.state("");
+
+    const example2 = () => {
+      const closed = van.state(false);
+      const formDom = form(
+        div(
+          label({ for: "git-branch", class: "block" }, "Branch"),
+          input({
+            id: "git-branch",
+            name: "git-branch",
+            type: "text",
+            class: "block input w-full",
+            placeholder: "main",
+            value: "main",
+          }),
+        ),
+        div(
+          label({ for: "git-url", class: "block" }, "URL"),
+          input({
+            id: "git-url",
+            name: "git-url",
+            type: "text",
+            class: "block input w-full",
+            placeholder: "https://github.com/org/repo.git",
+            value: "",
+          }),
+        ),
+        div(
+          label({ for: "git-remote", class: "block" }, "Remote"),
+          input({
+            id: "git-remote",
+            name: "git-remote",
+            type: "text",
+            class: "block input w-full",
+            placeholder: "origin",
+            value: "origin",
+          }),
+        ),
+        div(
+          label({ for: "git-commitmessage", class: "block" }, "Commit Message"),
+          input({
+            id: "git-commitmessage",
+            name: "git-commitmessage",
+            type: "text",
+            class: "block input w-full",
+            placeholder: "",
+            value: "Add application",
+          }),
+        ),
+      );
+
+      const onOk = async () => {
+        const gitBranch = formDom.querySelector("#git-branch").value;
+        const gitUrl = formDom.querySelector("#git-url").value;
+        const gitRemote = formDom.querySelector("#git-remote").value;
+        const gitCommitMessage =
+          formDom.querySelector("#git-commitmessage").value;
+        console.log(
+          { gitBranch },
+          { gitUrl },
+          { gitRemote },
+          { gitCommitMessage },
+        );
+        closed.val = true;
+
+        if (gitBranch && gitUrl && gitUrl && gitCommitMessage) {
+          const res = await fetch("http://localhost:3001/api/push-to-github", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              branch: {
+                ref: gitBranch,
+              },
+              commit: {
+                message: gitCommitMessage,
+              },
+              push: {
+                url: gitUrl,
+                remote: gitRemote,
+              },
+              files: files,
+            }),
+          });
+          const resJson = await res.json();
+          console.log({ resJson });
+
+          addMessage(resJson.message, "tool", []);
+        }
+      };
+
+      van.add(
+        document.body,
+        Modal(
+          { closed, blurBackground: true, clickBackgroundToClose: true },
+          p("What's your favorite programming language?"),
+          formDom,
+          div(
+            { class: "flex flex-row-reverse" },
+            button(
+              {
+                onclick: onOk,
+                class: "btn btn-secondary inline-block mt-4 ml-4",
+              },
+              "Push",
+            ),
+            button(
+              {
+                onclick: () => (closed.val = true),
+                class: "btn btn-outline btn-secondary mt-4",
+              },
+              "Cancel",
+            ),
+          ),
+        ),
+      );
+    };
+
+    const hidden = files.length === 0 ? "hidden" : "";
     const h = htmlToElement(html, "text/html");
     const a = div(
       { class: `card w-96 shadow-sm mb-4 w-full ${style}` },
       div(
         { class: "card-body" },
+        div(
+          { class: `grid justify-items-end ${hidden}` },
+          button(
+            {
+              class: "btn btn-secondary",
+              onclick: async () => {
+                console.log(JSON.stringify(files));
+
+                example2();
+
+                //
+              },
+            },
+            "git push",
+          ),
+        ),
         div({ class: "whitespace-pre-wrap break-words markdown-element" }, h),
       ),
     );
@@ -65,7 +225,7 @@ import { systemPrompt } from "./const.js";
   const send = async () => {
     const llmName = selectedLlm.val;
     const p = prompt.val;
-    addMessage(p, "user");
+    addMessage(p, "user", []);
     prompt.val = "";
     chatMessages = [...chatMessages, { role: "user", content: p }];
 
@@ -77,14 +237,14 @@ import { systemPrompt } from "./const.js";
 
     for await (const part of response) {
       counter.val += part.message.content;
-      console.log(part.message);
+      // console.log(part.message);
       replyArea.scrollTop = replyArea.scrollHeight;
     }
 
     const assistantReply = counter.val;
     const hoge = assistantReply.replace(/(```json\n|\n```)/g, "");
-    console.log({ assistantReply });
-    console.log(JSON.stringify(hoge, null, "  "));
+    // console.log({ assistantReply });
+    // console.log(JSON.stringify(JSON.parse(hoge), null, "  "));
 
     chatMessages = [
       ...chatMessages,
@@ -93,7 +253,10 @@ import { systemPrompt } from "./const.js";
 
     // LLM から不完全な JSON が返ることがあるからリペア。
     // それとストリーミングで受け取ったjsonを読み込む場合などに利用できそう。
+    console.log({ hoge });
     const json = JSON.parse(jsonrepair(hoge));
+    console.log(JSON.stringify(json, null, "  "));
+
     let markdown = "";
     for (const e of json.files) {
       markdown += `## ${e.filename}
@@ -106,8 +269,8 @@ ${e.explanation}
 `;
     }
     markdown += `\n\n${json.explanation}`;
+    addMessage(markdown, "assistant", json.files);
 
-    addMessage(markdown, "assistant");
     counter.val = "";
   };
 
@@ -120,7 +283,7 @@ ${e.explanation}
   const selectedLlm = van.state(storeLlm);
 
   const llms = await ollama.list();
-  console.log(llms);
+  // console.log(llms);
 
   const modelList = div(
     { class: "mb-2" },
@@ -165,14 +328,15 @@ ${e.explanation}
   const dom1 = div({ class: "mb-4" }, replyArea);
   const htmls = van.state([]);
   let m = div({ class: "" }, () => div({ class: "" }, htmls.val));
-  const form = div(
+
+  const chatForm = div(
     { class: "pt-8 flex items-center justify-center" },
     div({ class: "w-[800px]" }, modelList, dom5, sendBtn, dom1, m),
   );
 
   document.body.classList.add("bg-base-200", "min-h-screen");
 
-  van.add(document.body, form);
+  van.add(document.body, chatForm);
 
   chatMessages = [{ role: "system", content: systemPrompt }];
 })();

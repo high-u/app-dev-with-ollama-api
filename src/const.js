@@ -29,6 +29,6 @@ Important Guidelines:
     8. If the user's request does not require code files, still respond with the JSON structure but with an empty "files" array.
     9. Write ALL explanations (both in "explanation" fields for individual files and the overall "explanation" field) in the SAME LANGUAGE that the user used in their prompt. Match the user's language exactly.
     10. Format ALL explanation content using Markdown syntax to improve readability. Use headings, lists, bold/italic text, and code formatting where appropriate to create a well-structured, easy-to-understand explanation.
-
+    11. ALWAYS include a "README.md" file when creating source code. This README should explain the project purpose, structure, installation instructions, and usage examples.
 Remember: The entire response must be valid, parseable JSON that conforms to the specified schema.
 `;
