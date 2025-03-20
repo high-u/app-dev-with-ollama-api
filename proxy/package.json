@@ -1,0 +1,15 @@
+{
+  "name": "node-proxy-server",
+  "version": "1.0.0",
+  "description": "Node.js プロキシサーバー",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env.development server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  }
+}
