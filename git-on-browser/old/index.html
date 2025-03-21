@@ -1,98 +1,203 @@
 <!doctype html>
 <html lang="ja">
-    <head>
-        <meta charset="UTF-8" />
-        <title>HTML5の雛形</title>
-        <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
-        <script src="https://unpkg.com/isomorphic-git"></script>
-    </head>
-    <body>
-        <button id="hoge">git</button>
-        <script type="module">
-            import http from "https://unpkg.com/isomorphic-git@beta/http/web/index.js";
-            const hoge = document.getElementById("hoge");
-            hoge.addEventListener("click", async () => {
-                const fs = new LightningFS("fs");
-                const dir = "/test-clone3";
 
-                // await fs.promises.du(dir);
-                await fs.promises.mkdir(dir);
+<head>
+  <meta charset="UTF-8" />
+  <title>Gitリポジトリ操作</title>
+</head>
 
-                await git.init({ fs, dir: dir, defaultBranch: "main" });
-                console.log("git init");
-                await git.setConfig({
-                    fs,
-                    dir: dir,
-                    path: "user.name",
-                    value: "",
-                });
-                console.log("git set config 1");
-                await git.setConfig({
-                    fs,
-                    dir: dir,
-                    path: "user.email",
-                    value: "",
-                });
-                console.log("git set config 2");
+<body>
+  <button id="pushButton">GitHubにプッシュ</button>
+  <div id="status"></div>
 
-                // let branch = await git.currentBranch({
-                //     fs,
-                //     dir: dir,
-                //     fullname: false,
-                // });
-                // console.log({ branch });
+  <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
+  <script src="https://unpkg.com/isomorphic-git"></script>
+  <script type="module">
+    import { loadEnvFile } from "./env.js";
+    // 最新バージョンのHTTPクライアントを使用
+    import http from "https://unpkg.com/isomorphic-git/http/web/index.js";
 
-                await fs.promises.writeFile(`${dir}/README.md`, `# TEST`);
-                await git.add({
-                    fs,
-                    dir: dir,
-                    filepath: "README.md",
-                });
-                console.log("git add .");
-                let sha = await git.commit({
-                    fs,
-                    dir: dir,
-                    ref: "main",
-                    author: {
-                        name: "",
-                        email: "",
-                    },
-                    message: "Added the a.txt file",
-                });
-                console.log('git commit -m "Added the a.txt file"');
-                console.log(sha);
+    (async () => {
+      const env = await loadEnvFile("./.env");
 
-                await git.branch({
-                    fs,
-                    dir: dir,
-                    ref: "main",
-                    checkout: true,
-                    force: true,
-                });
-                console.log("git branch");
+      // ステータス表示用の関数
+      function updateStatus(message) {
+        const statusDiv = document.getElementById("status");
+        const timestamp = new Date().toLocaleTimeString();
+        statusDiv.innerHTML += `<p>${timestamp}: ${message}</p>`;
+        console.log(message);
+      }
 
-                const url = "https://github.com/high-u/my-new-repository-7.git";
-                await git.addRemote({
-                    fs,
-                    dir: dir,
-                    remote: "origin",
-                    url: url,
-                });
-                console.log(`git remote add origin ${url}`);
-                let pushResult = await git.push({
-                    fs,
-                    http,
-                    dir: dir,
-                    remote: "origin",
-                    ref: "main",
-                    onAuth: () => ({
-                        username: "",
-                        password: "",
-                    }),
-                    force: true,
-                });
-                console.log(pushResult);
+      // ディレクトリを再帰的に削除する関数（LightningFSにはrmがないため）
+      async function rmdir(fs, path) {
+        try {
+          // ディレクトリの中身を取得
+          const items = await fs.promises.readdir(path);
+
+          // 各項目を削除
+          for (const item of items) {
+            const itemPath = `${path}/${item}`;
+            const stats = await fs.promises.stat(itemPath);
+
+            if (stats.isDirectory()) {
+              // サブディレクトリを再帰的に削除
+              await rmdir(fs, itemPath);
+            } else {
+              // ファイルを削除
+              await fs.promises.unlink(itemPath);
+            }
+          }
+
+          // 空になったディレクトリを削除
+          await fs.promises.rmdir(path);
+          return true;
+        } catch (e) {
+          // ディレクトリが存在しない場合は成功とみなす
+          if (e.code === 'ENOENT') return true;
+          throw e;
+        }
+      }
+
+      const pushButton = document.getElementById("pushButton");
+      pushButton.addEventListener("click", async () => {
+        try {
+          updateStatus("処理を開始します...");
+
+          // ファイルシステムの初期化
+          const fs = new LightningFS("fs");
+          const dir = "/test-repo";
+
+          // ディレクトリを再作成（既存のものがあれば削除）
+          try {
+            await rmdir(fs, dir);
+            updateStatus("既存のディレクトリを削除しました");
+          } catch (e) {
+            // ディレクトリ削除中のエラー
+            updateStatus(`ディレクトリ削除でエラー: ${e.message}`);
+          }
+
+          try {
+            await fs.promises.mkdir(dir);
+            updateStatus("作業ディレクトリを作成しました");
+          } catch (e) {
+            if (e.code === 'EEXIST') {
+              updateStatus("ディレクトリは既に存在します。内容を再利用します。");
+            } else {
+              throw e;
+            }
+          }
+
+          // リポジトリの初期化
+          await git.init({
+            fs,
+            dir,
+            defaultBranch: "main"
+          });
+          updateStatus("リポジトリを初期化しました");
+
+          // ユーザー設定
+          await git.setConfig({
+            fs,
+            dir,
+            path: "user.name",
+            value: env.USER_NAME,
+          });
+
+          await git.setConfig({
+            fs,
+            dir,
+            path: "user.email",
+            value: env.USER_EMAIL,
+          });
+          updateStatus("Git設定を完了しました");
+
+          // ファイル作成
+          await fs.promises.writeFile(`${dir}/README.md`, `# README.md\n\n## Examples\n\n- Hoge Fuga Piyo\n`);
+          updateStatus("README.mdファイルを作成しました");
+
+          // ファイルをステージング
+          await git.add({
+            fs,
+            dir,
+            filepath: "README.md",
+          });
+          updateStatus("ファイルをステージングしました");
+
+          // コミット
+          const commitResult = await git.commit({
+            fs,
+            dir,
+            message: "Update README with timestamp",
+            author: {
+              name: env.USER_NAME,
+              email: env.USER_EMAIL,
+            },
+          });
+          updateStatus(`コミットを作成しました: ${commitResult}`);
+
+          // リモートリポジトリの設定
+          const url = env.REPOSITORY;
+          try {
+            await git.removeRemote({
+              fs,
+              dir,
+              remote: "origin"
             });
-        </script>
-    </body>
+            updateStatus("既存のリモート'origin'を削除しました");
+          } catch (e) {
+            // リモートが存在しない場合はエラーを無視
+            updateStatus("リモート'origin'は未設定です");
+          }
+
+          await git.addRemote({
+            fs,
+            dir,
+            remote: "origin",
+            url: url,
+          });
+          updateStatus(`リモートを設定しました: ${url}`);
+
+          // 現在のブランチを確認
+          const currentBranch = await git.currentBranch({ fs, dir });
+          updateStatus(`現在のブランチ: ${currentBranch}`);
+
+          // プッシュ
+          updateStatus("GitHubにプッシュを開始します...");
+          try {
+            const pushResult = await git.push({
+              fs,
+              http,
+              dir,
+              remote: "origin",
+              ref: currentBranch,
+              onAuth: () => ({
+                username: env.USER_NAME,
+                password: env.PAT, // GitHub個人アクセストークンを使用するのが推奨
+              }),
+              corsProxy: undefined, // プロキシサーバー自体がCORSプロキシの役割を果たすため不要
+              force: true,
+            });
+
+            updateStatus(`プッシュ完了: ${JSON.stringify(pushResult)}`);
+          } catch (pushError) {
+            updateStatus(`プッシュエラー: ${pushError.message}`);
+            updateStatus("詳細エラー情報をコンソールで確認してください");
+            console.error("プッシュエラーの詳細:", pushError);
+
+            // エラー内容を分析してユーザーフレンドリーなアドバイスを表示
+            if (pushError.message.includes("funny refname")) {
+              updateStatus("解決策: リポジトリの初期化とブランチ設定を確認してください");
+            } else if (pushError.message.includes("401")) {
+              updateStatus("解決策: 認証情報（ユーザー名/トークン）を確認してください");
+            }
+          }
+        } catch (error) {
+          updateStatus(`エラーが発生しました: ${error.message}`);
+          console.error("詳細なエラー情報:", error);
+        }
+      });
+    })();
+  </script>
+</body>
+
 </html>
