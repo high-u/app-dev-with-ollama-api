@@ -28,7 +28,13 @@ import { systemPrompt } from "./const.js";
     p,
     form,
     label,
+    a,
+    span,
+    del,
+    
+    h2,
   } = van.tags;
+  const {svg, path} = van.tags("http://www.w3.org/2000/svg");
 
   let chatMessages = [];
 
@@ -43,13 +49,13 @@ import { systemPrompt } from "./const.js";
   );
 
   const deploy = (message) => {
-    console.log(message);
+    // console.log(message);
   };
 
   const addMessage = (message, role, files) => {
     // message = message.replace(/[\n]+/, "\n");
-    console.log({ message });
-    console.log({ files });
+    // console.log({ message });
+    // console.log({ files });
 
     const style = ((role) => {
       if (role === "user") {
@@ -132,12 +138,12 @@ import { systemPrompt } from "./const.js";
         const gitRemote = formDom.querySelector("#git-remote").value;
         const gitCommitMessage =
           formDom.querySelector("#git-commitmessage").value;
-        console.log(
-          { gitBranch },
-          { gitUrl },
-          { gitRemote },
-          { gitCommitMessage },
-        );
+        // console.log(
+        //   { gitBranch },
+        //   { gitUrl },
+        //   { gitRemote },
+        //   { gitCommitMessage },
+        // );
         closed.val = true;
 
         if (gitBranch && gitUrl && gitUrl && gitCommitMessage) {
@@ -161,7 +167,7 @@ import { systemPrompt } from "./const.js";
             }),
           });
           const resJson = await res.json();
-          console.log({ resJson });
+          // console.log({ resJson });
 
           addMessage(resJson.message, "tool", []);
         }
@@ -206,7 +212,7 @@ import { systemPrompt } from "./const.js";
             {
               class: "btn btn-secondary",
               onclick: async () => {
-                console.log(JSON.stringify(files));
+                // console.log(JSON.stringify(files));
 
                 example2();
 
@@ -253,9 +259,9 @@ import { systemPrompt } from "./const.js";
 
     // LLM から不完全な JSON が返ることがあるからリペア。
     // それとストリーミングで受け取ったjsonを読み込む場合などに利用できそう。
-    console.log({ hoge });
+    // console.log({ hoge });
     const json = JSON.parse(jsonrepair(hoge));
-    console.log(JSON.stringify(json, null, "  "));
+    // console.log(JSON.stringify(json, null, "  "));
 
     let markdown = "";
     for (const e of json.files) {
@@ -336,43 +342,184 @@ ${e.explanation}
 
   document.body.classList.add("bg-base-200", "min-h-screen");
 
-  van.add(document.body, chatForm);
+
+  ////////
+  // <div class="card w-96 bg-base-100 card-xs shadow-sm">
+  //   <div class="card-body">
+  //     <h2 class="card-title">Xsmall Card</h2>
+  //     <p>A card component has a figure, a body part, and inside body there are title and actions parts</p>
+  //     <div class="justify-end card-actions">
+  //       <button class="btn btn-primary">Buy Now</button>
+  //     </div>
+  //   </div>
+  // </div>
+
+  const textareaPrompt = van.state("");
+
+  const gitPush = (data) => {
+    // console.log(data);
+  }
+
+  const chatOllama = async (message, llm) => {
+    // console.log(message, llm);
+    
+    // const p = message;
+    // addMessage(p, "user", []);
+    // prompt.val = "";
+    chatMessages = [...chatMessages, { role: "user", content: message }];
+    console.log({chatMessages});
+
+    const response = await ollama.chat({
+      model: llm,
+      messages: chatMessages,
+      stream: true,
+    });
+
+    let responseMessage = "";
+    for await (const part of response) {
+      responseMessage += part.message.content;
+      
+      const arrayMessage = responseMessage.split(/\n|\\n/g);
+      const viewMessage = [
+        arrayMessage.at(-4),
+        arrayMessage.at(-3),
+        arrayMessage.at(-2),
+        arrayMessage.at(-1),
+      ].join("\n");
+      
+      textareaPrompt.val = viewMessage;
+    }
+
+    textareaPrompt.val = "";
+
+    const jsonString = jsonrepair(responseMessage);
+    chatMessages = [...chatMessages, { role: "assistant", content: jsonString }];
+
+    return JSON.parse(jsonString);
+  }
+
+// <button class="btn btn-circle">
+//   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="size-[1.2em]"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>
+// </button>
+// <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+//  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+//  </svg>
+  
+  const showSourceCode = (data) => {
+    console.log({data});
+
+    const deleted = van.state(false)
+    return () => deleted.val ? null : div(
+      {class: "fixed top-0 left-0 w-screen h-screen bg-base-200 overflow-y-auto"},
+      div({class: "whitespace-pre-wrap source-code p-4"},
+        data.content,
+      ),
+      button(
+        {
+          class: "btn btn-circle fixed top-4 right-4",
+          onclick: () => deleted.val = true
+        },
+        svg(
+          {
+            viewBox: "0 0 24 24",
+            "stroke-width": "1.5",
+            class: "size-6 stroke-stone-500"
+          },
+          path({
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "d": "M6 18 18 6M6 6l12 12"
+          })
+        ),
+      )
+    )
+  }
+
+  const messages = van.state([]); // messages.val = [a, ...messages.val];
+
+  const TodoItem = (data, role) => {
+    console.log({data});
+
+    const contentsDom = ((role) => {
+      if (role === "user") {
+        return [
+          p(data.explanation),
+        ];
+      } else if (role === "assistant" && data.files.length > 0) {
+        return [
+          div({class: "justify-end card-actions"},
+            ...data.files.map((e) => button({
+              class: "btn",
+              onclick: () => van.add(document.body, showSourceCode(e)),
+            }, e.filename,)),
+            button({class: "btn btn-primary", onclick: () => gitPush(data)},
+              "Push"
+            ),
+          ),
+            ...data.files.map((e) => div(
+              h2({class: "card-title"}, e.filename),
+              p(e.explanation),
+            )),
+          div({class: "whitespace-pre-wrap"}, data.explanation),
+        ];
+      } else if (role === "assistant" && data.files.length === 0) {
+        return [
+          p(data.explanation),
+        ];
+      } else {
+        return div("");
+      }
+    })(role);
+
+    const bgColor = role === "user" ? "bg-base-300" : "bg-base-100";
+
+    return () => div({ class: `mt-4 card w-96 card-sm shadow-sm ${bgColor}`},
+      div({class: "card-body"},
+        ...contentsDom
+      ),
+    )
+  }
+  
+  const TodoList = () => {
+    const inputDom = textarea({
+      value: textareaPrompt,
+      rows: 4,
+      cols: 100,
+      wrap: "off",
+      class: "textarea w-full",
+    });
+    const buttonSend = button({
+      class: "btn btn-primary",
+      onclick: async () => {
+        messages.val = [
+          TodoItem({explanation: inputDom.value, files: []}, "user"),
+          ...messages.val
+        ];
+        const res = await chatOllama(inputDom.value, selectedLlm.val);
+        // const dm = displayMessage(res);
+        // console.log(dm);
+        messages.val = [
+          TodoItem(res, "assistant"),
+          ...messages.val
+        ];
+
+    }}, "Send");
+    const dom = div(
+      div(inputDom),
+      div(buttonSend),
+      div(...messages.val),
+    );
+    return dom;
+  }
+  ////////
+
+  van.add(document.body, chatForm, TodoList);
 
   chatMessages = [{ role: "system", content: systemPrompt }];
 })();
 
-// https://regex101.com/
-
 /*
-=== FILE: ([^ =]+) ===[\n\s]*```(?:\w+)?\n([\s\S]*?)\n```
-*/
-
-/*
-=== FILE: index.html ===
-
-```html
-<html>
-    <body>
-        あいうえお
-    </body>
-</html>
-```
-
-=== FILE: main.js ===
-
-```js
-const hoge = "hoge";
-if (hoge === "hoge") {
-  console.log("hoge");
-}
-```
-
-=== FILE: style.css ===
-
-```css
-body {
-    background-color: white;
-    padding: 8rem;
-}
-```
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+</svg>
 */
