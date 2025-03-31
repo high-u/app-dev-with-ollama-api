@@ -9,4 +9,21 @@ export default defineConfig({
   //   outDir: "./dist",
   // },
   plugins: [tailwindcss()],
+  define: {
+    'global': {},
+    'process.env': {},
+    'Buffer': ['buffer', 'Buffer']
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      }
+    }
+  },
+  resolve: {
+    alias: {
+      buffer: 'buffer'
+    }
+  }
 });

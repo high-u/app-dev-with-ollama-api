@@ -1,9 +1,11 @@
-import { LightningFS } from "@isomorphic-git/lightning-fs";
+import LightningFS from "@isomorphic-git/lightning-fs";
 import * as git from "isomorphic-git";
 import http from "isomorphic-git/http/web/index.js";
 
 // ファイルシステムのインスタンス（一度だけ作成）
-const fs = new LightningFS("fs");
+export const fs = new LightningFS("fs");
+// グローバルスコープで利用できるようにする
+window.fs = fs;
 
 /**
  * ディレクトリを再帰的に削除する

@@ -2,16 +2,22 @@
 // https://github.com/vanjs-org/van/discussions/21
 // https://kazuya-engineer.com/2024/01/10/how-to-create-mark-down-editer-by-vue-marked-highlight-js/
 
+import { Buffer } from 'buffer';
+window.Buffer = Buffer;
+
 import "./style.css";
 import van from "vanjs-core";
 import { Modal } from "vanjs-ui";
-import ollama from "ollama/browser";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
 import { jsonrepair } from "jsonrepair";
 import { systemPrompt } from "./const.js";
+import { chat, list } from "./services/ollama.js";
+// import { Toolchain } from "./utilities/toolchain.js";
+import { cleanWorkDirectories, createFiles, fs, ensureDirectory } from "./services/git.js";
+import { extractJsonCodeBlocks } from "./utilities/markdown.js";
 
 (async () => {
   const {
@@ -32,7 +38,20 @@ import { systemPrompt } from "./const.js";
   } = van.tags;
   const {svg, path} = van.tags("http://www.w3.org/2000/svg");
 
+  // /tmp ディレクトリを作成
+  await ensureDirectory("/tmp");
+
+  // 作業用ディレクトリ名を生成
+  const workDirName = `D${Date.now()}`;
+  const workDir = `/tmp/${workDirName}`;
+
+  // ページ表示時に既存の作業用ディレクトリを削除
+  const existingDirs = await fs.promises.readdir("/tmp");
+  const workDirs = existingDirs.filter(dir => dir.startsWith("D"));
+  await cleanWorkDirectories(workDirs.map(dir => `/tmp/${dir}`));
+
   let chatMessages = [];
+  // const toolchain = new Toolchain();
 
   const markedWithHighlight = new Marked(
     markedHighlight({
@@ -47,7 +66,7 @@ import { systemPrompt } from "./const.js";
   const storeLlm = localStorage.getItem("llm");
   const selectedLlm = van.state(storeLlm);
 
-  const llms = await ollama.list();
+  const llms = await list();
 
   const modelList = 
     select(
@@ -63,43 +82,189 @@ import { systemPrompt } from "./const.js";
         .map((e) => option({ selected: () => storeLlm === e.model }, e.model)),
     );
 
+  // マジックナンバーを定数に置き換え
+  const MIN_VALID_JSON_LENGTH = 4; // JSON最小長 "{}" + 追加文字
+
   const textareaPrompt = van.state("");
 
-  const gitPush = (data) => {
-    // console.log(data);
+  /**
+   * ストリーミングメッセージをUIに表示する
+   * @param {string} message - 表示するメッセージ
+   */
+  const updateStreamingMessage = (message) => {
+    const arrayMessage = message.split(/\n|\\n/g);
+    const viewMessage = [
+      arrayMessage.at(-4),
+      arrayMessage.at(-3),
+      arrayMessage.at(-2),
+      arrayMessage.at(-1),
+    ].join("\n");
+    
+    textareaPrompt.val = viewMessage;
+  };
+
+  /**
+   * ストリーミングメッセージをパースして処理する
+   * @param {string} streamMessage - ストリーミングメッセージ
+   */
+  const handleStreamMessage = (streamMessage) => {
+    // console.log({streamMessage});
+    // 空のメッセージや極端に短いメッセージはスキップ
+    // if (!streamMessage || streamMessage.length < MIN_VALID_JSON_LENGTH) {
+    //   console.log("Skipping empty or too short message:", streamMessage);
+    //   return;
+    // }
+    
+    // updateStreamingMessage(streamMessage);
+    const arrayMessage = streamMessage.split(/\n|\\n/g);
+    const viewMessage = [
+      arrayMessage.at(-4),
+      arrayMessage.at(-3),
+      arrayMessage.at(-2),
+      arrayMessage.at(-1),
+    ].join("\n");
+    
+    textareaPrompt.val = viewMessage;
+  };
+
+  const gitPush = async (data) => {
+    try {
+      // ファイルを作成
+      await createFiles(data.files, workDir);
+      
+      // ファイルとディレクトリの構成を出力
+      console.log("Directory structure after file creation:");
+      await printDirectoryStructure(workDir); 
+      
+      // 変更をステージング
+      await toolchain.git_add_all(workDir);
+      
+      // コミット
+      await toolchain.git_commit(workDir, "Initial commit", {
+        name: "AI Assistant",
+        email: "ai@example.com"
+      });
+      
+      // プッシュ
+      await toolchain.git_push(workDir, {
+        url: "https://github.com/yourusername/yourrepo.git",
+        username: "yourusername",
+        password: "yourpassword"
+      }, {
+        name: "AI Assistant",
+        email: "ai@example.com"
+      });
+
+      // git status の内容を出力
+      const status = await toolchain.git_diff(workDir);
+      console.log("Git status after operations:", status);
+    } catch (error) {
+      console.error("Git operations failed:", error);
+    }
+  }
+
+  /**
+   * ディレクトリ構造を再帰的に出力する
+   * @param {string} dir - 出力するディレクトリのパス
+   * @param {string} prefix - 出力のプレフィックス（インデント用）
+   * @returns {string} ディレクトリ構造の文字列
+   */
+  async function printDirectoryStructure(dir, prefix = "") {
+    let output = "";
+    const items = await fs.promises.readdir(dir);
+    
+    for (const item of items) {
+      // .git ディレクトリを除外
+      if (item === ".git") continue;
+      
+      const itemPath = `${dir}/${item}`;
+      const stats = await fs.promises.stat(itemPath);
+      
+      output += `${prefix}${stats.isDirectory() ? "📁" : "📄"} ${item}\n`;
+      
+      if (stats.isDirectory()) {
+        output += await printDirectoryStructure(itemPath, prefix + "  ");
+      }
+    }
+    return output;
   }
 
   const chatOllama = async (message, llm) => {
-    chatMessages = [...chatMessages, { role: "user", content: message }];
+    
     console.log({chatMessages});
 
-    const response = await ollama.chat({
-      model: llm,
-      messages: chatMessages,
-      stream: true,
-    });
-
-    let responseMessage = "";
-    for await (const part of response) {
-      responseMessage += part.message.content;
-      
-      const arrayMessage = responseMessage.split(/\n|\\n/g);
-      const viewMessage = [
-        arrayMessage.at(-4),
-        arrayMessage.at(-3),
-        arrayMessage.at(-2),
-        arrayMessage.at(-1),
-      ].join("\n");
-      
-      textareaPrompt.val = viewMessage;
-    }
+    const response = await chat(
+      [{ role: "user", content: message }],
+      llm,
+      chatMessages,
+      handleStreamMessage
+    );
+    console.log({response});
 
     textareaPrompt.val = "";
 
-    const jsonString = jsonrepair(responseMessage);
-    chatMessages = [...chatMessages, { role: "assistant", content: jsonString }];
+    try {
+      const jsonString = extractJsonCodeBlocks(response.message.content);
+      const parsedResponse = JSON.parse(jsonString);
 
-    return JSON.parse(jsonString);
+      // files が返ってきた場合、ファイルを作成
+      if (parsedResponse.files && parsedResponse.files.length > 0) {
+        try {
+          // ファイルを作成
+          await createFiles(parsedResponse.files, workDir);
+          
+          // ファイルとディレクトリの構成を出力
+          const structure = await printDirectoryStructure(workDir);
+          console.log("Directory structure after file creation:\n" + structure);
+        } catch (error) {
+          console.error("File creation failed:", error);
+          throw error;
+        }
+      }
+
+      // // tool の使用が含まれているか確認
+      // if (parsedResponse.tool) {
+      //   try {
+      //     // tool の実行
+      //     const toolResult = await toolchain.executeTool(parsedResponse.tool, workDir);
+
+      //     // tool の実行結果をチャット履歴に追加
+      //     chatMessages = [
+      //       ...chatMessages,
+      //       { role: "assistant", content: jsonString },
+      //       { role: "tool", content: JSON.stringify(toolResult) }
+      //     ];
+
+      //     // tool の実行結果を Ollama に送信
+      //     const toolResponse = await chat(
+      //       `Tool execution result: ${JSON.stringify(toolResult.result)}`,
+      //       llm,
+      //       chatMessages,
+      //       handleStreamMessage
+      //     );
+
+      //     const toolJsonString = jsonrepair(toolResponse.message.content);
+      //     chatMessages = [...chatMessages, { role: "assistant", content: toolJsonString }];
+      //     return JSON.parse(toolJsonString);
+      //   } catch (error) {
+      //     console.error("Tool execution failed:", error);
+      //     // エラーをチャット履歴に追加
+      //     chatMessages = [
+      //       ...chatMessages,
+      //       { role: "assistant", content: jsonString },
+      //       { role: "tool", content: JSON.stringify({ error: error.message }) }
+      //     ];
+      //     throw error;
+      //   }
+      // }
+
+      // tool の使用がない場合は通常の応答として処理
+      chatMessages = [...chatMessages, { role: "assistant", content: jsonString }];
+      return parsedResponse;
+    } catch (error) {
+      console.error("Chat operation failed:", error);
+      throw error;
+    }
   }
   
   const showSourceCode = (data) => {
@@ -170,7 +335,7 @@ import { systemPrompt } from "./const.js";
 
     const bgColor = role === "user" ? "bg-base-300" : "bg-base-100";
 
-    return () => div({ class: `mt-4 card w-96 card-sm shadow-sm ${bgColor}`},
+    return () => div({ class: `mt-4 card w-full card-sm shadow-sm ${bgColor}`},
       div({class: "card-body"},
         ...contentsDom
       ),
