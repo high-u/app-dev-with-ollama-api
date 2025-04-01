@@ -24,6 +24,8 @@
     "ollama": "^0.5.14",
     "tailwindcss": "^4.0.9",
     "vanjs-core": "^1.5.3",
-    "vanjs-ui": "^0.11.10"
+    "vanjs-ui": "^0.11.10",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.24.5"
   }
 }

@@ -7,17 +7,12 @@ window.Buffer = Buffer;
 
 import "./style.css";
 import van from "vanjs-core";
-import { Modal } from "vanjs-ui";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
-import { jsonrepair } from "jsonrepair";
-import { systemPrompt } from "./const.js";
-import { chat, list } from "./services/ollama.js";
-// import { Toolchain } from "./utilities/toolchain.js";
+import { chat, list, systemPrompt } from "./services/ollama.js";
 import { cleanWorkDirectories, createFiles, fs, ensureDirectory } from "./services/git.js";
-import { extractJsonCodeBlocks } from "./utilities/markdown.js";
 
 (async () => {
   const {
@@ -82,8 +77,8 @@ import { extractJsonCodeBlocks } from "./utilities/markdown.js";
         .map((e) => option({ selected: () => storeLlm === e.model }, e.model)),
     );
 
-  // マジックナンバーを定数に置き換え
-  const MIN_VALID_JSON_LENGTH = 4; // JSON最小長 "{}" + 追加文字
+  // Magic number replaced with constant
+  const MIN_VALID_JSON_LENGTH = 4; // JSON minimum length "{}" + additional characters
 
   const textareaPrompt = van.state("");
 
@@ -204,10 +199,10 @@ import { extractJsonCodeBlocks } from "./utilities/markdown.js";
     textareaPrompt.val = "";
 
     try {
-      const jsonString = extractJsonCodeBlocks(response.message.content);
-      const parsedResponse = JSON.parse(jsonString);
+      console.log("JSON.parse", response.message.content);
+      const parsedResponse = JSON.parse(response.message.content);
 
-      // files が返ってきた場合、ファイルを作成
+      // ファイルが返ってきた場合、ファイルを作成
       if (parsedResponse.files && parsedResponse.files.length > 0) {
         try {
           // ファイルを作成
@@ -258,8 +253,7 @@ import { extractJsonCodeBlocks } from "./utilities/markdown.js";
       //   }
       // }
 
-      // tool の使用がない場合は通常の応答として処理
-      chatMessages = [...chatMessages, { role: "assistant", content: jsonString }];
+      chatMessages = [...chatMessages, { role: "assistant", content: response.message.content }];
       return parsedResponse;
     } catch (error) {
       console.error("Chat operation failed:", error);
