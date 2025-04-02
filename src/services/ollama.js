@@ -6,12 +6,19 @@ import { jsonrepair } from "jsonrepair";
  * チャットメッセージを送信し、ストリーミングでレスポンスを受信する
  * @param {string} message - 送信するメッセージ
  * @param {string} model - 使用するモデル名
- * @param {Array} messages - チャット履歴
+ * @param {Object} chatMessages - globalState.messages オブジェクト
  * @param {Function} onStream - ストリーミング中のコールバック関数
  * @returns {Promise<string>} - 完全なレスポンスメッセージ
  */
-export const chat = async (message, model, chatMessages, onStream) => {
-  const newChatMessages = [...chatMessages, ...message];
+export const chat = async (userMessage, model, chatMessages, onStream) => {
+
+  // const message = [{ role: "user", content: userMessage }];
+  // chatMessagesはもう使用しない
+  // let history = [...chatMessages, ...message]; // この関数の引数で受け遠たメッセージ、Ollama から受け取ったメッセージ、この関数内で生成したメッセージを時系列に保存して return する
+
+  // グローバルステートからメッセージ配列を取得
+  // const existingMessages = chatMessages.val.messages || [];
+  // const newChatMessages = [...existingMessages, ...message];
 
   // Define the expected JSON schema based on the system prompt
   const responseSchema = {
@@ -36,15 +43,15 @@ export const chat = async (message, model, chatMessages, onStream) => {
 
   const options = {
     model,
-    messages: newChatMessages,
+    messages: chatMessages,
     stream: true, // Default to stream: true
     // format: responseSchema // Initialize without format
   };
 
   // メッセージに "ollama" が含まれている場合のみ tools オプションを追加
-  console.log({message});
-  if (message[message.length - 1].content.toLowerCase().includes("ollama")
-    && message[message.length - 1].role === "user")
+  // console.log({message});
+  if (chatMessages[chatMessages.length - 1].content.toLowerCase().includes("ollama")
+    && chatMessages[chatMessages.length - 1].role === "user")
   {
     options.stream = false; // Disable stream when using tools
     options.tools = [
@@ -120,7 +127,10 @@ export const chat = async (message, model, chatMessages, onStream) => {
   }
 
   
+  let toolChatMessages = [...chatMessages, finalPart.message];
   if (finalPart.message.hasOwnProperty("tool_calls")) {
+
+    
     console.log("tool_calls", finalPart);
     const toolCalls = await Promise.all(finalPart.message.tool_calls.map(async (toolCall, index) => {
       const toolResult = await tools[toolCall.function.name]();
@@ -132,8 +142,12 @@ export const chat = async (message, model, chatMessages, onStream) => {
       }
     }));
     console.log("tool response", [finalPart.message, ...toolCalls]);
+
+    toolChatMessages = [...toolChatMessages, ...toolCalls];
     // ツール実行後の最終応答を取得するために再帰呼び出し
-    finalPart = await chat([finalPart.message, ...toolCalls], model, newChatMessages, onStream);
+    toolChatMessages = await chat(null, model, toolChatMessages, onStream);
+
+    // toolChatMessages = [...toolChatMessages, finalPart.message];
     // console.log("finalResponseAfterToolCall", finalResponseAfterToolCall);
     // // 最終応答を main.js が期待する JSON 形式の文字列に整形
     // const finalExplanation = finalResponseAfterToolCall.message.content || "ツールは実行されましたが、最終的な説明は生成されませんでした。";
@@ -167,8 +181,15 @@ export const chat = async (message, model, chatMessages, onStream) => {
   }
   // format を使用した場合は、既に期待する JSON 文字列になっているはずなので何もしない
   
-  console.log("response", finalPart);
-  return finalPart;
+  // グローバルステートのメッセージを更新
+  // const updatedMessages = [...newChatMessages, { role: "assistant", content: finalPart.message.content }];
+  // chatMessages.val = {
+  //   ...chatMessages.val,
+  //   messages: updatedMessages
+  // };
+  
+  // console.log("response", finalPart);
+  return toolChatMessages;
 };
 
 /**
@@ -187,51 +208,3 @@ export const ps = async () => {
   return await ollama.ps();
 };
 
-export const systemPrompt = `You are an advanced AI coding assistant, specifically designed to help with complex programming tasks, tool use, code analysis, and software architecture design. Your primary focus is on providing expert-level assistance in coding, with a special emphasis on using tool-calling capabilities when necessary. Here are your key characteristics and instructions:
-
-1. Coding Expertise:
-  - You have deep knowledge of multiple programming languages, software design patterns, and best practices.
-  - Provide detailed, accurate, and efficient code solutions without additional explanations or conversational dialogue unless requested by the user.
-  - When suggesting code changes, consider scalability, maintainability, and performance implications.
-
-2. Tool Usage:
-  - You have access to various tools that can assist in completing tasks. Always consider if a tool can help in your current task.
-  - When you decide to use a tool, you must format your response as a JSON object:
-    {"name": "tool_name", "arguments": {"arg1": "value1", "arg2": "value2"}}
-  - Common tools include but are not limited to:
-    - \`view_file\`: To examine the contents of a specific file
-    - \`modify_code\`: To suggest changes to existing code
-    - \`create_file\`: To create new files with specified content
-    - \`ask_followup_question\`: To request more information from the user
-    - \`attempt_completion\`: To indicate that you've completed the assigned task
-    - \`ollama_ls\`: Get the list of models
-    - \`ollama_ps\`: Get the list of running models
-    - When you receive results from a tool execution, summarize the key information concisely rather than repeating all details.
-
-3. Response Types:
-  - You have two types of responses:
-    a) When a structured JSON response is requested (format parameter), follow the exact schema provided.
-    b) For normal queries without format specification, respond in a natural, helpful way without strict formatting requirements.
-  - For coding tasks, always ensure your code is clean, well-commented, and follows best practices.
-  - When tool usage is required, prioritize using the appropriate tools over formatting concerns.
-  - Always respond in the same language as the user's request (e.g., if the user asks in Japanese, respond in Japanese; if they use English, respond in English).
-
-4. Task Approach:
-  - Break down complex tasks into smaller, manageable steps unless requested to solve the task at once.
-  - If a task is large or complex, outline your approach before diving into details unless using a tool.
-  - Use tools to gather necessary information before proposing solutions.
-
-5. Code Analysis and Refactoring:
-  - When analysing existing code, consider its structure, efficiency, and adherence to best practices.
-  - Suggest refactoring when you see opportunities for improvement, explaining the benefits of your suggestions unless using a tool.
-  - If you encounter or anticipate potential errors, explain them clearly and suggest solutions unless using a tool.
-  - When providing code solutions, include relevant comments to explain complex logic.
-  - Adhere to coding standards and best practices specific to each programming language or framework.
-  - Suggest optimisations and improvements where applicable.
-
-6. Clarity and Communication:
-  - Explain your reasoning and decisions clearly, especially when suggesting architectural changes or complex solutions unless using a tool.
-  - If you're unsure about any aspect of the task or need more information, use the \`ask_followup_question\` tool to clarify.
-
-Remember, your primary goal is to assist with coding tasks and tool use efficiently and effectively. Utilise your tool-calling capabilities wisely to enhance your problem-solving and code generation abilities.
-`;

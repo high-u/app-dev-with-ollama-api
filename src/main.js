@@ -11,8 +11,9 @@ import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
-import { chat, list, systemPrompt } from "./services/ollama.js";
+import { chat, list } from "./services/ollama.js";
 import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit, setupRemote, push } from "./services/git.js";
+import { globalState } from "./state.js";
 
 (async () => {
   const {
@@ -58,24 +59,17 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
     }),
   );
 
-  const storeLlm = localStorage.getItem("llm");
-  const selectedLlm = van.state(storeLlm);
 
-  const llms = await list();
+  
+  // localStorage に値がない場合は保存しておく
+  if (!localStorage.getItem("llm") && defaultModel) {
+    localStorage.setItem("llm", defaultModel);
+  }
+  
+  // 画面ロード時にglobalState.messages.val.modelにモデル名をセット
+  // globalState.messages.val.model = selectedLlm.val;
 
-  const modelList = 
-    select(
-      {
-        class: "select w-full",
-        oninput: (e) => {
-          selectedLlm.val = e.target.value;
-          localStorage.setItem("llm", e.target.value);
-        },
-      },
-      llms.models
-        .sort((a, b) => (a.model > b.model ? 1 : -1))
-        .map((e) => option({ selected: () => storeLlm === e.model }, e.model)),
-    );
+  
 
   // Magic number replaced with constant
   const MIN_VALID_JSON_LENGTH = 4; // JSON minimum length "{}" + additional characters
@@ -188,19 +182,26 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
     
     console.log({chatMessages});
 
+    // const llm = globalState.messages.val.model;
+
     const response = await chat(
       [{ role: "user", content: message }],
       llm,
-      chatMessages,
+      [...globalState.messages.val, { role: "user", content: message }],
       handleStreamMessage
     );
     console.log({response});
 
+    globalState.messages.val = response;
+
     textareaPrompt.val = "";
 
+    const lastMessage = response.at(-1);
+    console.log("lastMessage", lastMessage);
+
     try {
-      console.log("JSON.parse", response.message.content);
-      const parsedResponse = JSON.parse(response.message.content);
+      console.log("JSON.parse", lastMessage.content);
+      const parsedResponse = JSON.parse(lastMessage.content);
 
       // ファイルが返ってきた場合、ファイルを作成
       if (parsedResponse.files && parsedResponse.files.length > 0) {
@@ -253,7 +254,7 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
       //   }
       // }
 
-      chatMessages = [...chatMessages, { role: "assistant", content: response.message.content }];
+      // chatMessages = [...chatMessages, { role: "assistant", content: response.message.content }];
       return parsedResponse;
     } catch (error) {
       console.error("Chat operation failed:", error);
@@ -407,6 +408,29 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
     )
   }
   
+  const llms = await list();
+  // localStorage からモデル名を取得、ない場合は最初のモデルを使用
+  const defaultModel = llms.models.length > 0 ? llms.models[0].model : '';
+  const storeLlm = localStorage.getItem("llm") || defaultModel;
+  const selectedLlm = van.state(storeLlm);
+
+  const modelList = select(
+    {
+      class: "select w-full",
+      oninput: (e) => {
+        selectedLlm.val = e.target.value;
+        localStorage.setItem("llm", e.target.value);
+      },
+      onchange: (e) => {
+        // globalState.messages.val.model = e.target.value;
+        // console.log(globalState.messages.val);
+      },
+    },
+    llms.models
+      .sort((a, b) => (a.model > b.model ? 1 : -1))
+      .map((e) => option({ selected: () => storeLlm === e.model }, e.model)),
+  );
+
   const TodoList = () => {
     const inputDom = textarea({
       value: textareaPrompt,
@@ -429,8 +453,8 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
           ...messages.val
         ];
     }}, svg({ fill: "none", viewBox: "0 0 24 24", "stroke-width": "1.5", stroke: "currentColor", class: "size-6" },
-      path({ "stroke-linecap": "round", "stroke-linejoin": "round", "d": "M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" }),
-    ), "Send");
+      path({ "stroke-linecap": "round", "stroke-linejoin": "round", "d": "M8.625 9.75a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 0 1 .778-.332 48.294 48.294 0 0 0 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" }),
+    ), "Talk to Ollama");
     const settingsDom = button({
       class: "btn w-full", 
       onclick: () => van.add(document.body, gitForm(data))
@@ -452,5 +476,55 @@ import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit,
 
   van.add(document.body, TodoList);
 
-  chatMessages = [{ role: "system", content: systemPrompt }];
+  globalState.messages.val = [{ role: "system", content: systemPrompt }];
+
 })();
+
+const systemPrompt = `You are an advanced AI coding assistant, specifically designed to help with complex programming tasks, tool use, code analysis, and software architecture design. Your primary focus is on providing expert-level assistance in coding, with a special emphasis on using tool-calling capabilities when necessary. Here are your key characteristics and instructions:
+
+1. Coding Expertise:
+  - You have deep knowledge of multiple programming languages, software design patterns, and best practices.
+  - Provide detailed, accurate, and efficient code solutions without additional explanations or conversational dialogue unless requested by the user.
+  - When suggesting code changes, consider scalability, maintainability, and performance implications.
+
+2. Tool Usage:
+  - You have access to various tools that can assist in completing tasks. Always consider if a tool can help in your current task.
+  - When you decide to use a tool, you must format your response as a JSON object:
+    {"name": "tool_name", "arguments": {"arg1": "value1", "arg2": "value2"}}
+  - Common tools include but are not limited to:
+    - \`view_file\`: To examine the contents of a specific file
+    - \`modify_code\`: To suggest changes to existing code
+    - \`create_file\`: To create new files with specified content
+    - \`ask_followup_question\`: To request more information from the user
+    - \`attempt_completion\`: To indicate that you've completed the assigned task
+    - \`ollama_ls\`: Get the list of models
+    - \`ollama_ps\`: Get the list of running models
+    - When you receive results from a tool execution, summarize the key information concisely rather than repeating all details.
+
+3. Response Types:
+  - You have two types of responses:
+    a) When a structured JSON response is requested (format parameter), follow the exact schema provided.
+    b) For normal queries without format specification, respond in a natural, helpful way without strict formatting requirements.
+  - For coding tasks, always ensure your code is clean, well-commented, and follows best practices.
+  - When tool usage is required, prioritize using the appropriate tools over formatting concerns.
+  - Always respond in the same language as the user's request (e.g., if the user asks in Japanese, respond in Japanese; if they use English, respond in English).
+
+4. Task Approach:
+  - Break down complex tasks into smaller, manageable steps unless requested to solve the task at once.
+  - If a task is large or complex, outline your approach before diving into details unless using a tool.
+  - Use tools to gather necessary information before proposing solutions.
+
+5. Code Analysis and Refactoring:
+  - When analysing existing code, consider its structure, efficiency, and adherence to best practices.
+  - Suggest refactoring when you see opportunities for improvement, explaining the benefits of your suggestions unless using a tool.
+  - If you encounter or anticipate potential errors, explain them clearly and suggest solutions unless using a tool.
+  - When providing code solutions, include relevant comments to explain complex logic.
+  - Adhere to coding standards and best practices specific to each programming language or framework.
+  - Suggest optimisations and improvements where applicable.
+
+6. Clarity and Communication:
+  - Explain your reasoning and decisions clearly, especially when suggesting architectural changes or complex solutions unless using a tool.
+  - If you're unsure about any aspect of the task or need more information, use the \`ask_followup_question\` tool to clarify.
+
+Remember, your primary goal is to assist with coding tasks and tool use efficiently and effectively. Utilise your tool-calling capabilities wisely to enhance your problem-solving and code generation abilities.
+`;
