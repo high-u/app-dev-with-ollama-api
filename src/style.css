@@ -15,3 +15,22 @@
 .markdown-element ul li p {
     display: inline;
 }
+
+.source-code {
+    /* background:#000;
+    font-size:36px;
+    font-weight:bold; */
+    color: transparent;
+    background: repeating-linear-gradient(
+        0deg,
+        oklch(0.453 0.124 130.933)   0   1.5em,
+        oklch(0.432 0.095 166.913) 1.5em   3em,
+        oklch(0.45 0.085 224.283)    3em 4.5em,
+        oklch(0.424 0.199 265.638) 4.5em   6em,
+        oklch(0.432 0.232 292.759)   6em 7.5em,
+        oklch(0.452 0.211 324.591) 7.5em   9em
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+

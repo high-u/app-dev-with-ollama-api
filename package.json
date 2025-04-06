@@ -12,15 +12,21 @@
     "vite": "^6.2.0"
   },
   "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.6.0",
     "@tailwindcss/vite": "^4.0.9",
+    "buffer": "^6.0.3",
     "daisyui": "^5.0.0",
     "highlight.js": "^11.11.1",
+    "isomorphic-git": "^1.30.1",
     "jsonrepair": "^3.12.0",
     "marked": "^15.0.7",
     "marked-highlight": "^2.2.1",
     "ollama": "^0.5.14",
     "tailwindcss": "^4.0.9",
     "vanjs-core": "^1.5.3",
-    "vanjs-ui": "^0.11.10"
+    "vanjs-ext": "^0.6.2",
+    "vanjs-ui": "^0.11.10",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.24.5"
   }
 }
