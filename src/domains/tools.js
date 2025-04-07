@@ -1,6 +1,6 @@
-import { list, ps } from "../services/ollama";
-import { jsonToMarkdownTable, formatBytes, formatDate } from "./array2MarkdownTable.js";
-import { jsonToMarkdownList } from "./array2MarkdownList.js";
+import { list, ps } from "../services/ollama.js";
+import { jsonToMarkdownTable, formatBytes, formatDate } from "../utilities/array2MarkdownTable.js";
+import { jsonToMarkdownList } from "../utilities/array2MarkdownList.js";
 
 /**
  * 利用可能なモデル一覧を取得する

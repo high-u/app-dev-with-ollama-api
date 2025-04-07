@@ -1,5 +1,5 @@
 import ollama from "ollama/browser";
-import { tools } from "../utilities/tools";
+import { tools } from "../domains/tools";
 import { jsonrepair } from "jsonrepair";
 
 /**
