@@ -128,13 +128,16 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
   // Magic number replaced with constant
   const MIN_VALID_JSON_LENGTH = 4; // JSON minimum length "{}" + additional characters
 
-  const textareaPrompt = van.state("");
+  // ストリーミング状態と入力メッセージを管理する状態変数
+  const inputMessage = van.state(""); // inputMessage変数をグローバルに移動
 
   /**
    * ストリーミングメッセージをUIに表示する
    * @param {string} message - 表示するメッセージ
    */
   const updateStreamingMessage = (message) => {
+    // ストリーミング開始フラグ設定（UI変更が不要なので削除してもOK）
+    
     const arrayMessage = message.split(/\n|\\n/g);
     const viewMessage = [
       arrayMessage.at(-4),
@@ -143,7 +146,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       arrayMessage.at(-1),
     ].join("\n");
     
-    textareaPrompt.val = viewMessage;
+    inputMessage.val = viewMessage;
   };
 
   /**
@@ -151,14 +154,8 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
    * @param {string} streamMessage - ストリーミングメッセージ
    */
   const handleStreamMessage = (streamMessage) => {
-    // console.log({streamMessage});
-    // 空のメッセージや極端に短いメッセージはスキップ
-    // if (!streamMessage || streamMessage.length < MIN_VALID_JSON_LENGTH) {
-    //   console.log("Skipping empty or too short message:", streamMessage);
-    //   return;
-    // }
+
     
-    // updateStreamingMessage(streamMessage);
     const arrayMessage = streamMessage.split(/\n|\\n/g);
     const viewMessage = [
       arrayMessage.at(-4),
@@ -167,7 +164,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       arrayMessage.at(-1),
     ].join("\n");
     
-    textareaPrompt.val = viewMessage;
+    inputMessage.val = viewMessage;
   };
 
   const gitPush = async (data) => {
@@ -234,9 +231,6 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
 
   const chatOllama = async (message, llm) => {
     
-    // console.log({chatHistory: chatHistory.val});
-
-    // const llm = globalState.messages.val.model;
 
     const response = await chat(
       [{ role: "user", content: message }],
@@ -245,6 +239,9 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       handleStreamMessage
     );
     console.log({response});
+
+    // ストリーミング終了
+    inputMessage.val = ""; // 入力欄をクリア
 
     // 状態を直接更新
     chatHistory.val = response;
@@ -506,8 +503,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
   };
 
   const TodoList = () => {
-    // ユーザー入力用のstate
-    const inputMessage = van.state("");
+    // 入力メッセージはグローバルに移動したので、ここでは宣言しない
     
     const inputDom = textarea({
       value: inputMessage,
@@ -516,6 +512,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       cols: 100,
       wrap: "off",
       class: "textarea w-full",
+      
     });
     
     const buttonSend = button({
@@ -526,18 +523,16 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
         // メッセージを追加して状態を更新
         chatHistory.val = [...chatHistory.val, { role: "user", content: inputMessage.val }];
         
-        // 入力をクリア
-        const messageToSend = inputMessage.val;
-        inputMessage.val = "";
+        
         
         // チャットリクエストを送信
-        await chatOllama(messageToSend, selectedLlm.val);
+        await chatOllama(inputMessage.val, selectedLlm.val);
       }
     }, 
     svg({ fill: "none", viewBox: "0 0 24 24", "stroke-width": "1.5", stroke: "currentColor", class: "size-6" },
       path({ "stroke-linecap": "round", "stroke-linejoin": "round", "d": "M8.625 9.75a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 0 1 .778-.332 48.294 48.294 0 0 0 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" })
     ), 
-    "送信");
+    "Talk to ...");
     
     const settingsDom = button({
       class: "btn w-full", 
@@ -547,7 +542,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       path({ "stroke-linecap": "round", "stroke-linejoin": "round", "d": "M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.559.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.894.149c-.424.07-.764.383-.929.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z" }),
       path({ "stroke-linecap": "round", "stroke-linejoin": "round", "d": "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" })
     ), 
-    "設定");
+    "Settings");
     
     // メインのUI構造
     const dom = div({class: "p-8"},
@@ -567,4 +562,3 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
   van.add(document.body, TodoList);
 
 })();
-
