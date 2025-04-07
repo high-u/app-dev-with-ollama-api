@@ -12,7 +12,7 @@ import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
 import { chat, list } from "./services/ollama.js";
-import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit, setupRemote, push } from "./services/git.js";
+import { cleanWorkDirectories, createFiles, fs, ensureDirectory, addAll, commit, setupRemote, push, gitPush, printDirectoryStructure } from "./services/git.js";
 // import { chatHistory, derived, derivedState } from "./state.js";
 // import * as vanX from "vanjs-ext"
 
@@ -132,24 +132,6 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
   const inputMessage = van.state(""); // inputMessage変数をグローバルに移動
 
   /**
-   * ストリーミングメッセージをUIに表示する
-   * @param {string} message - 表示するメッセージ
-   */
-  const updateStreamingMessage = (message) => {
-    // ストリーミング開始フラグ設定（UI変更が不要なので削除してもOK）
-    
-    const arrayMessage = message.split(/\n|\\n/g);
-    const viewMessage = [
-      arrayMessage.at(-4),
-      arrayMessage.at(-3),
-      arrayMessage.at(-2),
-      arrayMessage.at(-1),
-    ].join("\n");
-    
-    inputMessage.val = viewMessage;
-  };
-
-  /**
    * ストリーミングメッセージをパースして処理する
    * @param {string} streamMessage - ストリーミングメッセージ
    */
@@ -166,42 +148,6 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
     
     inputMessage.val = viewMessage;
   };
-
-  const gitPush = async (data) => {
-    try {
-      // ファイルを作成
-      await createFiles(data.files, workDir);
-      
-      // ファイルとディレクトリの構成を出力
-      // console.log("Directory structure after file creation:");
-      await printDirectoryStructure(workDir); 
-      
-      // 変更をステージング
-      await toolchain.git_add_all(workDir);
-      
-      // コミット
-      await toolchain.git_commit(workDir, "Initial commit", {
-        name: "AI Assistant",
-        email: "ai@example.com"
-      });
-      
-      // プッシュ
-      await toolchain.git_push(workDir, {
-        url: "https://github.com/yourusername/yourrepo.git",
-        username: "yourusername",
-        password: "yourpassword"
-      }, {
-        name: "AI Assistant",
-        email: "ai@example.com"
-      });
-
-      // git status の内容を出力
-      const status = await toolchain.git_diff(workDir);
-      // console.log("Git status after operations:", status);
-    } catch (error) {
-      console.error("Git operations failed:", error);
-    }
-  }
 
   /**
    * ディレクトリ構造を再帰的に出力する
@@ -345,55 +291,18 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       ),
       div({class: "flex gap-4 mt-6"},
         button({type: "button", class: "btn flex-1", onclick: () => deleted.val = true}, "Cancel"),
-        button({type: "submit", class: "btn btn-primary flex-1"}, "Push to Repository"),
+        button({
+          class: "btn btn-primary flex-1",
+          onclick: () => {
+            // gitPush関数を呼び出す
+            gitPush(data, workDir, repoUrl.val, email.val, username.val, password.val);
+            // フォームを閉じる
+            deleted.val = true;
+          }
+        }, "Push to Repository"),
       ),
     );
   };
-
-  /**
-   * メッセージデータを正規化する関数
-   * @param {string|object} data - 正規化するメッセージデータ
-   * @param {string} role - メッセージの役割（'user'または'assistant'）
-   * @returns {object} 正規化されたメッセージオブジェクト
-   */
-  const normalizeMessageData = (data, role) => {
-    // データが文字列の場合
-    if (typeof data === "string") {
-      // JSON文字列かどうかチェック
-      if (data.trim().startsWith("{") && data.trim().endsWith("}")) {
-        try {
-          // JSONとしてパース
-          const parsedData = JSON.parse(data);
-          // ファイル配列が存在しなければ空配列を追加
-          if (!parsedData.files) parsedData.files = [];
-          return parsedData;
-        } catch (e) {
-          // パースに失敗した場合は通常のテキストとして扱う
-          return { explanation: data, files: [] };
-        }
-      } else {
-        // 通常のテキスト
-        return { explanation: data, files: [] };
-      }
-    }
-    
-    // すでにオブジェクトの場合
-    if (typeof data === "object" && data !== null) {
-      // filesプロパティを持っていなければ追加
-      if (!data.files) data.files = [];
-      return data;
-    }
-    
-    // その他のケース
-    return { explanation: String(data), files: [] };
-  };
-
-  const TodoItem = (data) => {
-    // const role = data.role;
-    // console.log("data: ", data);
-    return div(data);
-
-  }
   
   const llms = await list();
   // localStorage からモデル名を取得、ない場合は最初のモデルを使用
@@ -474,6 +383,12 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
             const parsedResponse = item.data;
             return li({class: wrapCard},
               div({class: styleCard},
+                
+                ...parsedResponse.files.map((e) => div(
+                  h2({class: "card-title"}, e.filename),
+                  p(e.explanation),
+                )),
+                div({class: "whitespace-break-spaces"}, parsedResponse.explanation),
                 div({class: "justify-end card-actions"},
                   ...parsedResponse.files.map((e) => button({
                     class: "btn",
@@ -483,11 +398,6 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
                     "Push"
                   ),
                 ),
-                ...parsedResponse.files.map((e) => div(
-                  h2({class: "card-title"}, e.filename),
-                  p(e.explanation),
-                )),
-                div({class: "whitespace-break-spaces"}, parsedResponse.explanation),
               )
             );
           } else {

@@ -320,6 +320,7 @@ export async function push(workDir, remoteInfo, author, commitMessage = "Automat
         username: remoteInfo.username,
         password: remoteInfo.password,
       }),
+      force: true,
     });
     
     return pushResult;
@@ -394,5 +395,73 @@ export async function diff(workDir) {
     };
   } catch (e) {
     throw new Error(`git diff の取得に失敗しました: ${e.message}`);
+  }
+}
+
+/**
+ * ディレクトリ構造を再帰的に出力する
+ * @param {string} dir - 出力するディレクトリのパス
+ * @param {string} prefix - 出力のプレフィックス（インデント用）
+ * @returns {Promise<string>} ディレクトリ構造の文字列
+ */
+export async function printDirectoryStructure(dir, prefix = "") {
+  let output = "";
+  const items = await fs.promises.readdir(dir);
+  
+  for (const item of items) {
+    // .git ディレクトリを除外
+    if (item === ".git") continue;
+    
+    const itemPath = `${dir}/${item}`;
+    const stats = await fs.promises.stat(itemPath);
+    
+    output += `${prefix}${stats.isDirectory() ? "📁" : "📄"} ${item}\n`;
+    
+    if (stats.isDirectory()) {
+      output += await printDirectoryStructure(itemPath, prefix + "  ");
+    }
+  }
+  return output;
+}
+
+/**
+ * Gitリポジトリを設定し、ファイルを作成してコミットしプッシュする
+ * @param {Object} data - アプリケーションデータ
+ * @param {Array<{filename: string, content: string}>} data.files - ファイル情報の配列
+ * @param {string} workDir - 作業用フォルダのパス
+ */
+export async function gitPush(data, workDir, url, email, username, password) {
+  try {
+    // ファイルを作成
+    await createFiles(data.files, workDir);
+    
+    // ファイルとディレクトリの構成を出力
+    // console.log("Directory structure after file creation:");
+    await printDirectoryStructure(workDir); 
+    
+    // 変更をステージング
+    await addAll(workDir);
+    
+    // コミット
+    await commit(workDir, "Initial commit", {
+      name: username,
+      email: email,
+    });
+    
+    // プッシュ
+    await push(workDir, {
+      url: url,
+      username: username,
+      password: password,
+    }, {
+      name: username,
+      email: email,
+    });
+
+    // git status の内容を出力
+    const status = await diff(workDir);
+    console.log("Git status after operations:", status);
+  } catch (error) {
+    console.error("Git operations failed:", error);
   }
 } 
