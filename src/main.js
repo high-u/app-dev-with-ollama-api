@@ -176,7 +176,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
       await createFiles(data.files, workDir);
       
       // ファイルとディレクトリの構成を出力
-      console.log("Directory structure after file creation:");
+      // console.log("Directory structure after file creation:");
       await printDirectoryStructure(workDir); 
       
       // 変更をステージング
@@ -200,7 +200,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
 
       // git status の内容を出力
       const status = await toolchain.git_diff(workDir);
-      console.log("Git status after operations:", status);
+      // console.log("Git status after operations:", status);
     } catch (error) {
       console.error("Git operations failed:", error);
     }
@@ -234,7 +234,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
 
   const chatOllama = async (message, llm) => {
     
-    console.log({chatHistory: chatHistory.val});
+    // console.log({chatHistory: chatHistory.val});
 
     // const llm = globalState.messages.val.model;
 
@@ -249,11 +249,11 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
     // 状態を直接更新
     chatHistory.val = response;
     
-    console.log("chatHistory", chatHistory.val);
+    // console.log("chatHistory", chatHistory.val);
   }
   
   const showSourceCode = (data) => {
-    console.log({data});
+    // console.log({data});
 
     const deleted = van.state(false)
     return () => deleted.val ? null : div(
@@ -393,7 +393,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
 
   const TodoItem = (data) => {
     // const role = data.role;
-    console.log("data: ", data);
+    // console.log("data: ", data);
     return div(data);
 
   }
@@ -425,58 +425,58 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
 
   // メッセージリストを処理する純粋関数
   const processMessages = (messages) => {
-    return messages.map(message => {
-      if (typeof message === "object") {
-        if (message.role === "user" || message.role === "assistant") {
-          // JSON形式のメッセージかチェック
-          if (message.content && message.content.startsWith(`{`)) {
-            try {
-              const parsedResponse = JSON.parse(message.content);
-              return {
-                type: "json",
-                data: parsedResponse,
-                role: message.role
-              };
-            } catch (e) {
-              // JSONパースに失敗した場合は通常テキストとして扱う
-              return {
-                type: "text",
-                content: message.content,
-                role: message.role
-              };
-            }
-          } else {
-            return {
-              type: "text",
-              content: message.content,
-              role: message.role
-            };
-          }
+    return messages.filter(e => typeof e === "object" && (e.role === "user" || e.role === "assistant") && e.content !== "").map(message => {
+      // JSON形式のメッセージかチェック
+      if (message.content && typeof message.content === 'string' && message.content.startsWith(`{`)) {
+        try {
+          const parsedResponse = JSON.parse(message.content);
+          return {
+            type: "json",
+            data: parsedResponse,
+            role: message.role
+          };
+        } catch (e) {
+          // JSONパースに失敗した場合は通常テキストとして扱う
+          return {
+            type: "text",
+            content: message.content,
+            role: message.role
+          };
         }
-      } else if (message) {
+      } else {
         return {
           type: "text",
-          content: String(message),
-          role: "unknown"
+          content: message.content,
+          role: message.role
         };
       }
-      return null;
     }).filter(item => item !== null);
   };
 
   const messageList = () => {
     // サンプルコードの構成に合わせて実装
     const displayMessages = van.derive(() => processMessages(chatHistory.val));
+    // console.log({displayMessages: displayMessages.val});
     
     // サンプルコードと同様にspan()で囲む構造に修正
     return span(
-      () => ul(
+      () => ul({class: ""},
         // map関数の結果をそのまま返す（配列を文字列化させない）
+        
         displayMessages.val.map(item => {
+          // console.log({item});
+          let wrapCard = "card w-full shadow-sm mb-2";
+          const styleCard = "card-body whitespace-break-spaces";
+          if (item.role === "user") {
+            wrapCard += " bg-base-100";
+          } else if (item.role === "assistant") {
+            wrapCard += " bg-base-200";
+          }
+
           if (item.type === "json") {
             const parsedResponse = item.data;
-            return li(
-              div(
+            return li({class: wrapCard},
+              div({class: styleCard},
                 div({class: "justify-end card-actions"},
                   ...parsedResponse.files.map((e) => button({
                     class: "btn",
@@ -490,11 +490,15 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
                   h2({class: "card-title"}, e.filename),
                   p(e.explanation),
                 )),
-                div({class: "whitespace-pre-wrap"}, parsedResponse.explanation),
+                div({class: "whitespace-break-spaces"}, parsedResponse.explanation),
               )
             );
           } else {
-            return li(div(item.content));
+            return li({class: wrapCard},
+              div({class: styleCard},
+                item.content
+              )
+            );
           }
         })
       )
