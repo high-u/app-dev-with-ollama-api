@@ -450,7 +450,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
           role: message.role
         };
       }
-    }).filter(item => item !== null);
+    }).filter(item => item !== null).reverse();
   };
 
   const messageList = () => {
@@ -465,7 +465,7 @@ Remember, your primary goal is to assist with coding tasks and tool use efficien
         
         displayMessages.val.map(item => {
           // console.log({item});
-          let wrapCard = "card w-full shadow-sm mb-2";
+          let wrapCard = "card w-full shadow-sm mt-2";
           const styleCard = "card-body whitespace-break-spaces";
           if (item.role === "user") {
             wrapCard += " bg-base-100";
