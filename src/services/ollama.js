@@ -1,5 +1,5 @@
 import ollama from "ollama/browser";
-import { tools } from "../utilities/tools";
+import { tools } from "../domains/tools";
 import { jsonrepair } from "jsonrepair";
 
 /**
@@ -50,8 +50,10 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
 
   // メッセージに "ollama" が含まれている場合のみ tools オプションを追加
   // console.log({message});
-  if (chatMessages[chatMessages.length - 1].content.toLowerCase().includes("ollama")
-    && chatMessages[chatMessages.length - 1].role === "user")
+  if (chatMessages[chatMessages.length - 1] && 
+      chatMessages[chatMessages.length - 1].role === "user" &&
+      typeof chatMessages[chatMessages.length - 1].content === "string" &&
+      chatMessages[chatMessages.length - 1].content.toLowerCase().includes("ollama"))
   {
     options.stream = false; // Disable stream when using tools
     options.tools = [
@@ -81,15 +83,15 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
       },
     ];
     // Do not set options.format when using tools
-  } else {
+  } else if (chatMessages[chatMessages.length - 1] && chatMessages[chatMessages.length - 1].role === "user") {
     // Set format only when not using tools
     options.format = responseSchema;
     // Keep stream: true when using format
   }
 
-  console.log({options});
+  // console.log({options});
   const response = await ollama.chat(options);
-  // console.log({response});
+  
 
   let responseMessage = "";
   let finalPart = null;
@@ -108,11 +110,19 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
         }
       }
       if (part.done) {
-        console.log("done", part);
+        // console.log("done", part);
         // JSONを修正してから割り当てる
         try {
-          const repairedJson = jsonrepair(responseMessage); // この時点での part.message.content は空文字のため responseMessage を使用しているが要検証
-          part.message.content = repairedJson;
+          // JSONのような形式かどうかを簡易的にチェック
+          if (responseMessage.trim() && 
+              (responseMessage.trim().startsWith('{') && responseMessage.trim().endsWith('}')) || 
+              (responseMessage.trim().startsWith('[') && responseMessage.trim().endsWith(']'))) {
+            const repairedJson = jsonrepair(responseMessage);
+            part.message.content = repairedJson;
+          } else {
+            // JSONのような形式でない場合は元のメッセージをそのまま使用
+            part.message.content = responseMessage;
+          }
         } catch (error) {
           console.error("JSONの修正に失敗しました:", error);
           // エラーを適切に処理する。元のメッセージを割り当てるか、エラーをスローするなど
@@ -123,6 +133,7 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
     }
   } else {
     // 非streamモードの場合：responseオブジェクトを直接使用
+    // console.log("ollama response: ", response);
     finalPart = response;
   }
 
@@ -131,17 +142,24 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
   if (finalPart.message.hasOwnProperty("tool_calls")) {
 
     
-    console.log("tool_calls", finalPart);
+    // console.log("tool_calls", finalPart);
+    
+    // チャット履歴内の既存のツール呼び出し数をカウント
+    const existingToolCallCount = chatMessages.filter(
+      msg => msg.role === "tool"
+    ).length;
+    
     const toolCalls = await Promise.all(finalPart.message.tool_calls.map(async (toolCall, index) => {
       const toolResult = await tools[toolCall.function.name]();
+      console.log("toolResult", toolResult);
       return {
         role: "tool",
-        tool_call_id: String(index), // 複数回のツールコールが呼び出されることは考慮していない
+        tool_call_id: String(existingToolCallCount + index), // 連番で一意な ID を設定
         name: toolCall.function.name,
         content: JSON.stringify(toolResult),
       }
     }));
-    console.log("tool response", [finalPart.message, ...toolCalls]);
+    // console.log("tool response", [finalPart.message, ...toolCalls]);
 
     toolChatMessages = [...toolChatMessages, ...toolCalls];
     // ツール実行後の最終応答を取得するために再帰呼び出し
@@ -197,7 +215,9 @@ export const chat = async (userMessage, model, chatMessages, onStream) => {
  * @returns {Promise<Array>} - モデル一覧
  */
 export const list = async () => {
-  return await ollama.list();
+  const list = await ollama.list();
+  console.log("ollama list: ", list);
+  return list;
 };
 
 /**
@@ -205,6 +225,7 @@ export const list = async () => {
  * @returns {Promise<Object>} - 実行中のモデル情報
  */
 export const ps = async () => {
-  return await ollama.ps();
+  const ps = await ollama.ps();
+  console.log("ollama ps: ", ps);
+  return ps;
 };
-
